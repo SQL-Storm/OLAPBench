@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "title": "Umbra Benchmark Schema",
+  "title": "OLAP Benchmark Schema",
   "definitions": {
     "query_plan": {
       "type": "object",
@@ -32,6 +32,7 @@
             "monetdb",
             "postgres",
             "singlestore",
+            "snowflake",
             "sqlserver",
             "umbra",
             "umbradev"
@@ -52,20 +53,11 @@
             },
             "numa_node": {
               "type": "integer",
-              "enum": [
-                1,
-                2,
-                3,
-                4
-              ]
+              "enum": [1, 2, 3, 4]
             },
             "index": {
               "type": "string",
-              "enum": [
-                "none",
-                "primary",
-                "foreign"
-              ],
+              "enum": ["none", "primary", "foreign"],
               "default": "primary"
             },
             "version": {
@@ -97,10 +89,7 @@
           "additionalProperties": true
         }
       },
-      "required": [
-        "title",
-        "dbms"
-      ],
+      "required": ["title", "dbms"],
       "additionalProperties": false
     },
     "benchmark": {
@@ -193,11 +182,5 @@
     }
   },
   "additionalProperties": false,
-  "required": [
-    "title",
-    "repetitions",
-    "warmup",
-    "output",
-    "systems"
-  ]
+  "required": ["title", "repetitions", "warmup", "output", "systems"]
 }

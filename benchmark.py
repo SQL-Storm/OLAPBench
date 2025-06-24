@@ -309,6 +309,7 @@ def run_benchmarks(args):
     benchmark_descriptions = benchmarks()
 
     if args.env is not None:
+        logger.log_driver(f"Loading environment variables from {args.env}")
         load_dotenv(dotenv_path=args.env, verbose=True)
 
     logger.set_verbose(args.verbose)

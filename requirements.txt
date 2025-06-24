@@ -23,6 +23,8 @@ pymonetdb
 # SQLServer
 pyodbc
 
+# Snowflake
+snowflake-connector-python
 
 # CPU Configuration
 psutil

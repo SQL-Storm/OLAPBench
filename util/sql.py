@@ -111,6 +111,22 @@ def copy_statements_postgres(schema: dict, data_dir: str, supports_text: bool = 
     return statements
 
 
+def copy_statements_snowflake(schema: dict, data_dir: str) -> [str]:
+    delimiter = schema["delimiter"]
+
+    null = f", NULL_IF=({escape(schema['null'])})" if "null" in schema else ""
+    csv_escape = f", ESCAPE={escape(schema['csv_escape'])}" if "csv_escape" in schema else ""
+
+    statements = []
+    for table in schema["tables"]:
+        if table.get("initially empty", False):
+            continue
+        statements.append(f'PUT file://{os.path.join(data_dir, table["file"])} @%{table["name"]};')
+        statements.append(f'COPY INTO {table["name"]} FROM @%{table["name"]} FILE_FORMAT=(TYPE=CSV, FIELD_OPTIONALLY_ENCLOSED_BY=\'"\', FIELD_DELIMITER=\'{delimiter}\'{null}{csv_escape});')
+
+    return statements
+
+
 def copy_statements_duckdb_csv_singlethreaded(schema: dict, data_dir: str) -> [str]:
     delimiter = f", delim={escape(schema['delimiter'])}, parallel=false"
     null = f", nullstr={escape(schema['null'])}" if "null" in schema else ""

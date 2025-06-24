@@ -273,29 +273,6 @@ class DBMS(ABC):
                     progress.finish()
                     logger.log_verbose_dbms(f'Executed additional query in {formatter.format_time(time)}', self)
 
-    def benchmark_query(self, queries: list[(str, str)], repetitions: int, warmup: int, timeout: int = 0, fetch_result: bool = True) -> list[str, Result]:
-        results: dict[str, Result] = {}
-
-        with logger.LogProgress("Running queries...", len(queries) * (repetitions + warmup), base=repetitions + warmup) as progress:
-            for (name, query) in queries:
-                result = Result()
-
-                progress.next(f'Running {name}...')
-                for i in range(warmup):
-                    self._execute(query, fetch_result, timeout=timeout)
-                    progress.finish()
-
-                for i in range(repetitions):
-                    result.merge(self._execute(query, fetch_result, timeout=timeout))
-                    progress.finish()
-
-                results[name] = result
-
-                med = median(result.client_total) if len(result.client_total) > 0 else float('nan')
-                logger.log_verbose_dbms(f'{name} {formatter.format_time(med)} ({result.rows} row)', self)
-
-        return results
-
     def retrieve_query_plan(self, query: str, include_system_representation: bool = False) -> QueryPlan:
         return None
 
@@ -370,12 +347,20 @@ def database_systems() -> Dict[str, DBMSDescription]:
     Returns:
         Dict[str, DBMSDescription]: A dictionary mapping DBMS names to their description classes.
     """
-    from dbms import apollo, cedardb, clickhouse, duckdb, hyper, monetdb, postgres, singlestore, sqlserver, umbra, umbradev
+    from dbms import apollo, cedardb, clickhouse, duckdb, hyper, monetdb, postgres, singlestore, snowflake, sqlserver, umbra, umbradev
 
     dbms_list = [
-        apollo.ApolloDescription, cedardb.CedarDBDescription, clickhouse.ClickHouseDescription,
-        duckdb.DuckDBDescription, hyper.HyperDescription, monetdb.MonetDBDescription,
-        postgres.PostgresDescription, singlestore.SingleStoreDescription, sqlserver.SQLServerDescription,
-        umbra.UmbraDescription, umbradev.UmbraDevDescription
+        apollo.ApolloDescription,
+        cedardb.CedarDBDescription,
+        clickhouse.ClickHouseDescription,
+        duckdb.DuckDBDescription,
+        hyper.HyperDescription,
+        monetdb.MonetDBDescription,
+        postgres.PostgresDescription,
+        singlestore.SingleStoreDescription,
+        snowflake.SnowflakeDescription,
+        sqlserver.SQLServerDescription,
+        umbra.UmbraDescription,
+        umbradev.UmbraDevDescription
     ]
     return {dbms.get_name(): dbms for dbms in dbms_list}

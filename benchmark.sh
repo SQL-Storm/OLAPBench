@@ -39,9 +39,11 @@ JSON=$1
 shift
 BENCHMARK=${*:-default}
 
+ENV="--env ${SCRIPT_DIR}/.env"
+
 while true; do
     # Call the benchmark script
-    "${SCRIPT_DIR}/benchmark.py" ${VERBOSE} ${CLEAR} ${LAUNCH} -j $JSON $BENCHMARK
+    "${SCRIPT_DIR}/benchmark.py" ${VERBOSE} ${CLEAR} ${LAUNCH} ${ENV} -j $JSON $BENCHMARK
     EXIT_CODE=$?
 
     # Do not clear the previous benchmark results

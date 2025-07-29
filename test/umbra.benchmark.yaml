@@ -4,6 +4,9 @@ warmup: 0
 timeout: 1
 global_timeout: 1
 fetch_result: true
+query_plan:
+  retrieve: true
+  system_representation: true
 output: test/umbra/
 systems:
   - title: Umbra ${version}

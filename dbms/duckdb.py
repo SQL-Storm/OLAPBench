@@ -125,6 +125,8 @@ class DuckDB(DBMS):
 
     def retrieve_query_plan(self, query: str, include_system_representation: bool = False) -> QueryPlan:
         result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True).result
+        if not result or not result[0]:
+            return None
         json_plan = json.loads(result[0][1])
         plan_parser = DuckDBParser(include_system_representation=include_system_representation)
         query_plan = plan_parser.parse_json_plan(query, json_plan)

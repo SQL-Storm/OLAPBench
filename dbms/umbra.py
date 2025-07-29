@@ -172,6 +172,8 @@ class Umbra(Postgres):
 
     def retrieve_query_plan(self, query: str, include_system_representation: bool = False) -> QueryPlan:
         result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True).result
+        if not result or not result[0]:
+            return None
         text_plan = result[0][0]
         json_plan = json.loads(text_plan, allow_nan=True)
         plan_parser = UmbraParser(include_system_representation=include_system_representation)

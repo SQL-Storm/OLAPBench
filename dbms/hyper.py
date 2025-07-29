@@ -43,9 +43,8 @@ class Hyper(DuckDB):
         return sql.copy_statements_postgres(schema, "/data")
 
     def retrieve_query_plan(self, query: str, include_system_representation: bool = False) -> QueryPlan:
-        result = self.connection.execute_query(query="explain (format json, analyze) " + query.strip())
-        text_plan = "".join([line[0] for line in result])
-        json_plan = json.loads(text_plan)["input"]
+        result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True).result
+        json_plan = json.loads(result[0][0])["input"]
         plan_parser = HyperParser(include_system_representation=include_system_representation)
         query_plan = plan_parser.parse_json_plan(query, json_plan)
         return query_plan

@@ -84,7 +84,7 @@ class PostgresParser(PlanParser):
             case "Seq Scan" | "Index Scan" | "Index Only Scan" | "Bitmap Heap Scan" | "Bitmap Index Scan":
                 return TableScan(operator_id)
             case "Limit":
-                return limit(operator_id)
+                return CustomOperator("Limit", operator_id)
             case operator_name if operator_name.endswith("Join"):
                 return Join(operator_id)
             case "Hash":

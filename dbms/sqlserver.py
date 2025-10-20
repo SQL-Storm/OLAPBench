@@ -20,8 +20,8 @@ class SQLServer(DBMS):
         return 'sqlserver'
 
     @property
-    def docker_image(self) -> str:
-        return 'gitlab.db.in.tum.de:5005/schmidt/olapbench/sqlserver:latest'
+    def docker_image_name(self) -> str:
+        return 'mcr.microsoft.com/mssql/server:2022-latest'
 
     def connection_string(self) -> str:
         return self._connection_string

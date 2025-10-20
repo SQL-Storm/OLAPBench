@@ -21,8 +21,8 @@ class Postgres(DBMS):
         return "postgres"
 
     @property
-    def docker_image(self) -> str:
-        return f'gitlab.db.in.tum.de:5005/schmidt/olapbench/postgres:{self._version}'
+    def docker_image_name(self) -> str:
+        return f'postgres:{self._version}'
 
     def connection_string(self) -> str:
         return self._connection_string

@@ -123,6 +123,7 @@ class DBMS(ABC):
         self._index = DBMS.Index.from_string(params.get("index", "primary"))
         self._version = params.get("version", "latest")
         self._umbra_planner = params.get("umbra_planner", False)
+        self._docker = docker.from_env()
 
         self._settings = settings
 
@@ -138,34 +139,30 @@ class DBMS(ABC):
         return self._version
 
     @property
-    def docker_image(self) -> str:
-        return f'gitlab.db.in.tum.de:5005/schmidt/olapbench/{self.name}:{self.version}'
+    def docker_image_name(self) -> str:
+        pass
 
     def _pull_image(self):
         # Pull the docker image
-        self.client = docker.from_env()
-        logger.log_dbms(f"Pulling {self.docker_image} docker image", self)
+        logger.log_dbms(f"Pulling {self.docker_image_name} docker image", self)
         try:
-            self.client.images.pull(self.docker_image)
+            return self._docker.images.pull(self.docker_image_name)
         except Exception as e:
-            logger.log_dbms(f"Could not pull {self.docker_image} docker image: {e}", self)
+            logger.log_dbms(f"Could not pull {self.docker_image_name} docker image: {e}", self)
 
     def _start_container(self, environment: dict, source_port: int, dest_port: int, source_db_dir: str, dest_db_dir: str, docker_params: dict = {}):
-        # Setup the environment
-        environment["HOST_UID"] = os.getuid()
-        environment["HOST_GID"] = os.getgid()
-
         # Pull the docker image
-        self._pull_image()
+        image = self._pull_image()
 
         # Start the container
         try:
-            self.container = self.client.containers.run(
-                image=self.docker_image,
-                auto_remove=True,
+            self.container = self._docker.containers.run(
+                image=image,
+                auto_remove=False,
                 detach=True,
                 privileged=True,
                 tty=True,
+                user=f"{os.getuid()}:{os.getgid()}",
                 environment=environment,
                 cpuset_cpus=self._cpuset_cpus,
                 cpuset_mems=self._cpuset_mems,
@@ -198,7 +195,7 @@ class DBMS(ABC):
             logger.log_dbms(f"Killed {self.name} docker container", self)
 
     def _close_container(self):
-        if self.container is not None and self._container_status() == "running":
+        if self.container is not None:
             self.container.stop(timeout=300)
             logger.log_dbms(f"Stopped {self.name} docker container", self)
 

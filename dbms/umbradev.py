@@ -55,9 +55,9 @@ class UmbraDev(Umbra):
 
         elif self._version == "latest" or re.match(r"\d{2}\.\d{2}(\.\d+)?", self._version):
             # Start Umbra in the docker container
-            logger.log_verbose_dbms(f"Using umbra sql binary from docker container {self.docker_image}", self)
+            logger.log_verbose_dbms(f"Using umbra sql binary from docker container {self.docker_image_name}", self)
             env = " ".join([f"-e {key}={value}" for key, value in self.umbra_env().items()])
-            self.sql = f"docker run --rm -i --entrypoint /entrypoint.sh -v {self._umbra_db}:/var/db:rw -v {self._data_dir}:/data:ro -e HOST_UID={os.getuid()} -e HOST_GID={os.getgid()} {env} {self.docker_image} umbra-sql"
+            self.sql = f"docker run --rm -i -v {self._umbra_db}:/var/db:rw -v {self._data_dir}:/data:ro --user {os.getuid()}:{os.getgid()} {env} {self.docker_image_name} umbra-sql"
             self._umbra_db_client = "/var/db"
             self._data_dir_client = "/data"
 

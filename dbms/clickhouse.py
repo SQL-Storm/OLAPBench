@@ -20,8 +20,8 @@ class ClickHouse(DBMS):
         return "clickhouse"
 
     @property
-    def docker_image(self) -> str:
-        return f'gitlab.db.in.tum.de:5005/schmidt/olapbench/clickhouse:{self._version}'
+    def docker_image_name(self) -> str:
+        return f'clickhouse:{self._version}'
 
     def connection_string(self) -> str:
         return "docker exec -it docker_clickhouse clickhouse-client -d clickhouse"
@@ -44,9 +44,6 @@ class ClickHouse(DBMS):
         self._start_container(clickhouse_environment, 9005, 54325, self.host_dir.name, "/var/lib/clickhouse/", docker_params=docker_params)
 
         logger.log_verbose_dbms("Starting ClickHouse docker image ...", self)
-
-        if self.container.exec_run('su -c "ls /data" clickhouse').exit_code != 0:
-            raise Exception("cannot access data directory")
 
         start_time = time.time()
         timeout = 120  # 2 minutes

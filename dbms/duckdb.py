@@ -17,8 +17,34 @@ duck = None
 
 class DuckDB(DBMS):
 
+    versions = [
+        "0.7.0",
+        "0.7.1",
+        "0.8.0",
+        "0.8.1",
+        "0.9.0",
+        "0.9.1",
+        "0.9.2",
+        "0.10.0",
+        "0.10.1",
+        "0.10.2",
+        "0.10.3",
+        "1.0.0",
+        "1.1.0",
+        "1.1.1",
+        "1.1.2",
+        "1.1.3",
+        "1.2.0",
+        "1.2.1",
+        "1.2.2",
+        "1.3.0",
+    ]
+
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):
         super().__init__(benchmark, db_dir, data_dir, params, settings)
+
+        if self._version not in self.versions and self._version != "latest":
+            raise Exception(f"DuckDB version {self._version} is not supported. Supported versions are: {', '.join(self.versions)}")
 
     @property
     def name(self) -> str:
@@ -66,6 +92,19 @@ class DuckDB(DBMS):
         self._close_container()
         if self.host_dir:
             self.host_dir.cleanup()
+
+    def _pull_image(self):
+        # Build the docker image
+        version = self._version if self._version != "latest" else self.versions[-1]
+        tag = f"sqlstorm/duckdb:{version}"
+        logger.log_dbms(f"Building {tag} docker image", self)
+        try:
+            image = self._docker.images.build(path=os.path.join(os.path.dirname(__file__), "..", "docker", "duckdb"), tag=tag, buildargs={'VERSION': version}, rm=True)[0]
+            logger.log_dbms(f"Built {tag} docker image", self)
+            return image
+        except Exception as e:
+            logger.log_dbms(f"Could not build {tag} docker image: {e}", self)
+            raise Exception(f"Could not build {tag} docker image")
 
     def _create_table_statements(self, schema: dict) -> list[str]:
         return sql.create_table_statements(schema, alter_table=False)

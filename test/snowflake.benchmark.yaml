@@ -1,0 +1,16 @@
+title: Snowflake Test
+repetitions: 1
+warmup: 0
+timeout: 10
+global_timeout: 10
+fetch_result: true
+output: test/snowflake/
+systems:
+  - title: Snowflake
+    dbms: snowflake
+    disabled: false
+    parameter:
+      size: "X-Small"
+benchmarks:
+  - name: tpch
+    scale: 0.01

@@ -27,6 +27,7 @@
             "apollo",
             "cedardb",
             "clickhouse",
+            "databricks",
             "duckdb",
             "hyper",
             "monetdb",

@@ -111,6 +111,27 @@ def copy_statements_postgres(schema: dict, data_dir: str, supports_text: bool = 
     return statements
 
 
+def copy_statements_databricks(schema: dict, data_dir: str) -> [str]:
+    delimiter = schema["delimiter"]
+    format = schema["format"] if schema["format"] != "text" else "csv"
+
+    null = f", 'nullValue'={escape(schema['null'])}" if "null" in schema else ""
+    quote = f", 'quote'={escape(schema['quote'])}" if "quote" in schema else ""
+    csv_escape = f", 'escape'={escape(schema['csv_escape'])}" if format == "csv" and "csv_escape" in schema else ""
+    header = f", 'header'='true'" if "header" in schema and schema["header"] else ""
+
+    statements = []
+    for table in schema["tables"]:
+        if table.get("initially empty", False):
+            continue
+
+        columns = ', '.join(f'{col["name"]}' for col in table['columns'] if col.get("_eval", True))
+        statements.append(
+            f'copy into {table["name"]} ({columns}) from \'{os.path.join(data_dir, table["file"])}\' FILEFORMAT={format} FORMAT_OPTIONS(\'delimiter\'=\'{delimiter}\'{null}{quote}{csv_escape}{header});')
+
+    return statements
+
+
 def copy_statements_snowflake(schema: dict, data_dir: str) -> [str]:
     delimiter = schema["delimiter"]
 

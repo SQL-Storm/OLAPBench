@@ -1,0 +1,16 @@
+title: Databricks Test
+repetitions: 1
+warmup: 0
+timeout: 10
+global_timeout: 10
+fetch_result: true
+output: test/databricks/
+systems:
+  - title: Databricks
+    dbms: databricks
+    disabled: false
+    parameter:
+      size: "2X-Small"
+benchmarks:
+  - name: tpch
+    scale: 0.01

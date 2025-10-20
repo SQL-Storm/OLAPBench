@@ -26,6 +26,11 @@ pyodbc
 # Snowflake
 snowflake-connector-python
 
+# Databricks
+databricks-sdk
+databricks-sql-connector
+databricks-sql-connector[pyarrow]
+
 # CPU Configuration
 psutil
 py-libnuma

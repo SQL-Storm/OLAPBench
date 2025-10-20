@@ -347,12 +347,13 @@ def database_systems() -> Dict[str, DBMSDescription]:
     Returns:
         Dict[str, DBMSDescription]: A dictionary mapping DBMS names to their description classes.
     """
-    from dbms import apollo, cedardb, clickhouse, duckdb, hyper, monetdb, postgres, singlestore, snowflake, sqlserver, umbra, umbradev
+    from dbms import apollo, cedardb, clickhouse, databricks, duckdb, hyper, monetdb, postgres, singlestore, snowflake, sqlserver, umbra, umbradev
 
     dbms_list = [
         apollo.ApolloDescription,
         cedardb.CedarDBDescription,
         clickhouse.ClickHouseDescription,
+        databricks.DatabricksDescription,
         duckdb.DuckDBDescription,
         hyper.HyperDescription,
         monetdb.MonetDBDescription,

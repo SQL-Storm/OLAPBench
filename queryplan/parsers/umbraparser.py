@@ -141,6 +141,8 @@ class UmbraParser(PlanParser):
                 return ArrayUnnest(operator_id)
             case "regexsplit":
                 return RegexSplit(operator_id)
+            case "generateseries":
+                return CustomOperator("GenerateSeries", operator_id)
             case other:
                 raise ValueError(f"{other} is not a recognized UMBRA operator")
 

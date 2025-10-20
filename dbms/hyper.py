@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 
 from benchmarks.benchmark import Benchmark
@@ -6,13 +7,18 @@ from dbms.dbms import DBMS, DBMSDescription
 from dbms.duckdb import DuckDB
 from queryplan.parsers.hyperparser import HyperParser
 from queryplan.queryplan import QueryPlan
-from util import sql
+from util import logger, sql
 
 
 class Hyper(DuckDB):
 
+    versions = ["0.0.21200"]
+
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):
         super().__init__(benchmark, db_dir, data_dir, params, settings)
+
+        if self._version not in self.versions and self._version != "latest":
+            raise Exception(f"Hyper version {self._version} is not supported. Supported versions are: {', '.join(self.versions)}")
 
     @property
     def name(self) -> str:
@@ -33,6 +39,21 @@ class Hyper(DuckDB):
         self._close_container()
         if self.host_dir:
             self.host_dir.cleanup()
+
+            self.host_dir.cleanup()
+
+    def _pull_image(self):
+        # Build the docker image
+        version = self._version if self._version != "latest" else self.versions[-1]
+        tag = f"sqlstorm/hyper:{version}"
+        logger.log_dbms(f"Building {tag} docker image", self)
+        try:
+            image = self._docker.images.build(path=os.path.join(os.path.dirname(__file__), "..", "docker", "hyper"), tag=tag, buildargs={'VERSION': version}, rm=True)[0]
+            logger.log_dbms(f"Built {tag} docker image", self)
+            return image
+        except Exception as e:
+            logger.log_dbms(f"Could not build {tag} docker image: {e}", self)
+            raise Exception(f"Could not build {tag} docker image")
 
     def _create_table_statements(self, schema: dict) -> list[str]:
         statements = sql.create_table_statements(schema)

@@ -16,8 +16,8 @@ class SingleStore(SQLServer):
         return 'singlestore'
 
     @property
-    def docker_image(self) -> str:
-        return DBMS.docker_image.fget(self)
+    def docker_image_name(self) -> str:
+        return "singlestore/cluster-in-a-box:latest"
 
     def __enter__(self):
         # prepare database directories
@@ -30,6 +30,7 @@ class SingleStore(SQLServer):
             "LICENSE_KEY": "BGFlODdhMGI4MTkyZDQzMjk5MjI2ZDEzYzAyMmEzY2IzjlxuZwAAAAAAAAAAAAAAAAkwNAIYLfSh1I1PbuEfRtEPWxLwdyKwQMZIGJUlAhgSLR+GTxtuGUSCuGxUab43dWJsHnmTMn4AAA=="
         }
         docker_params = {
+            "command": ["/bin/sh", "-c", "ls -al /etc/memsql/memsqlctl.hcl && sed -i 's/user = \"memsql\"/user = \"local\"/' /etc/memsql/memsqlctl.hcl && /startup"]
         }
         self._start_container(singlestore_environment, 3306, 33061, self.host_dir.name, "/var/lib/memsql", docker_params=docker_params)
         self._connect("DRIVER={MariaDB};SERVER=127.0.0.1;PORT=33061;TrustServerCertificate=yes;UID=root;PWD=SingleStore;OPTION=" + str(67108864 + 1048576))

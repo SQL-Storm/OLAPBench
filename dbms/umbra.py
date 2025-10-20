@@ -84,8 +84,8 @@ class Umbra(Postgres):
         return "umbra"
 
     @property
-    def docker_image(self) -> str:
-        return f'gitlab.db.in.tum.de:5005/schmidt/olapbench/umbra:{self._version}'
+    def docker_image_name(self) -> str:
+        return f'umbradb/umbra:{self._version}'
 
     def umbra_env(self):
         env = {

@@ -78,8 +78,6 @@ class Process:
                         logger.log_verbose_process_stderr(f'stderr: {data}')
                         return data
 
-                print(f"data: {data}")
-
                 # Check if the process has terminated
                 if self.process.poll() is not None:
                     raise ChildProcessError("process closed")

@@ -178,9 +178,11 @@ class UmbraDev(Umbra):
                     extra["scale"] = float(row["scale"])
                     extra["ipc"] = float(row["ipc"])
                     extra["cpus"] = float(row["cpus"])
-                    for k in row.keys():
+
+                    querycounters = row if self._version == "25.01" else json.loads(row["querycounters"], allow_nan=True)
+                    for k in querycounters.keys():
                         if "." in k:
-                            extra[k] = float(row[k])
+                            extra[k] = float(querycounters[k])
                     break
         except Exception:
             pass

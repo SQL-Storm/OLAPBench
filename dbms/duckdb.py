@@ -38,6 +38,10 @@ class DuckDB(DBMS):
         "1.2.1",
         "1.2.2",
         "1.3.0",
+        "1.3.1",
+        "1.3.2",
+        "1.4.0",
+        "1.4.1",
     ]
 
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):

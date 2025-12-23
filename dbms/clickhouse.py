@@ -77,12 +77,6 @@ class ClickHouse(DBMS):
                              f"insert into {table['name']} from infile '/data/{table['file']}' format CSV;")
         return stmts
 
-    def _container_status(self) -> str:
-        try:
-            return self.client.containers.get(self.container.id).status
-        except Exception:
-            return "removed"
-
     def _execute_in_container(self, command: str, timeout: int = 0):
         timer = None
         if timeout > 0:
@@ -112,6 +106,11 @@ class ClickHouse(DBMS):
         with open(query_path, 'w') as query_sql:
             query_sql.write("set allow_experimental_join_condition=1;\n")
             query_sql.write("set allow_experimental_analyzer=1;\n")
+            for key, value in self._settings.items():
+                if isinstance(value, str):
+                    query_sql.write(f"set {key}='{value}';\n")
+                else:
+                    query_sql.write(f"set {key}={value};\n")
             if timeout > 0:
                 query_sql.write(f"set max_execution_time={timeout};\n")
 
@@ -129,7 +128,6 @@ class ClickHouse(DBMS):
             if self._container_status() != "running":
                 raise e
 
-            logger.log_error_verbose(str(e))
             result.message = str(e)
             result.state = Result.TIMEOUT if "Timeout exceeded" in result.message else Result.ERROR
             result.client_total.append(timeout * 1000 if result.state == Result.TIMEOUT else client_total * 1000)

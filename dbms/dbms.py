@@ -181,9 +181,8 @@ class DBMS(ABC):
     def _container_status(self) -> str:
         if self.container is None:
             return "not started"
-
         try:
-            return self.client.containers.get(self.container.id).status
+            return self._docker.containers.get(self.container.id).status
         except Exception:
             return "removed"
 

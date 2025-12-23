@@ -42,6 +42,8 @@ class DuckDB(DBMS):
         "1.3.2",
         "1.4.0",
         "1.4.1",
+        "1.4.2",
+        "1.4.3",
     ]
 
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):
@@ -89,6 +91,9 @@ class DuckDB(DBMS):
         docker_params = {}
         self._start_container({}, 5432, 54323, self.host_dir.name, "/db", docker_params=docker_params)
         self._connect(54323)
+
+        for (setting, value) in self._settings.items():
+            self._execute(f"PRAGMA {setting}=\'{value}\';", fetch_result=False)
 
         return self
 

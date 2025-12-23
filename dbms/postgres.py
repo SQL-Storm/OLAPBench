@@ -44,6 +44,7 @@ class Postgres(DBMS):
         self._connection_string = f"PGPASSWORD='{password}' psql -h localhost -p {port} -U {user} -d {database}"
 
         self.connection.set_session(autocommit=True)
+        self.connection.set_client_encoding('utf-8')
         self.cursor = self.connection.cursor()
 
         logger.log_verbose_dbms(f"Established connection to {self.name}", self)

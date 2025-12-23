@@ -7,7 +7,7 @@ import docker
 import docker.types
 import simplejson as json
 from benchmarks.benchmark import Benchmark
-from dbms.dbms import DBMS
+from dbms.dbms import DBMS, Result
 from dbms.dbms import DBMSDescription
 from dbms.postgres import Postgres
 from queryplan.parsers.umbraparser import UmbraParser
@@ -166,7 +166,7 @@ class Umbra(Postgres):
         }
         dialect = "postgresql" if dialect not in dialects else dialects[dialect]
         res = self._execute(f"explain (sql, dialect {dialect}) {query}", True)
-        if res.error:
+        if res.state != Result.SUCCESS:
             return None
         return "".join(res.result)
 

@@ -91,9 +91,7 @@
     },
     "header": { "type": "boolean", "default": false },
     "lowercase_names": { "type": "boolean", "default": false },
-    "escape_names": { "type": "boolean", "default": true },
-    "additional_sql_create": { "type": "array", "items": { "$ref": "#/definitions/query" } },
-    "additional_sql_insert": { "type": "array", "items": { "$ref": "#/definitions/query" } }
+    "escape_names": { "type": "boolean", "default": true }
   },
   "additionalProperties": false,
   "required": [ "file_ending", "delimiter", "format", "tables" ]

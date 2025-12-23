@@ -17,6 +17,9 @@ simplejson
 # Umbra & Postgres
 psycopg2
 
+# ClickHouse
+clickhouse-connect
+
 # MonetDB
 pymonetdb
 

@@ -4,6 +4,7 @@ import re
 from abc import ABC, abstractmethod
 from enum import Enum
 from statistics import median
+import threading
 from typing import Optional, List, Dict
 
 import docker
@@ -186,6 +187,28 @@ class DBMS(ABC):
         except Exception:
             return "removed"
 
+    def _execute_in_container(self, command: str, timeout: int = 0):
+        timer = None
+        if timeout > 0:
+            timer = threading.Timer(timeout, self._kill_container)
+            timer.start()
+
+        logger.log_verbose_process(command)
+        result = self.container.exec_run(command)
+
+        if timer is not None:
+            timer.cancel()
+            timer.join()
+
+        if result.exit_code != 0:
+            logger.log_verbose_process_stderr(result.output.decode('utf-8'))
+            raise Exception(result.output.decode('utf-8'))
+        else:
+            if result.output:
+                logger.log_verbose_process(result.output.decode('utf-8').strip())
+
+        return result
+
     def _kill_container(self):
         if self.container is not None:
             logger.log_dbms(f"Killing {self.name} docker container", self)
@@ -229,6 +252,9 @@ class DBMS(ABC):
         statements = self._copy_statements(schema)
         non_empty_tables = [table for table in schema['tables'] if not table.get("initially empty", False) and not self._benchmark.empty()]
 
+        if len(statements) == 0:
+            return
+
         with logger.LogProgress("Loading tables...", len(statements)) as progress:
             j = 0
             for table in schema['tables']:
@@ -244,33 +270,8 @@ class DBMS(ABC):
                         time += output.client_total[0]
                         progress.finish()
                         j += 1
-                if "additional_sql_insert" in schema:
-                    table_insert_statements = [sql["query"] for sql in schema["additional_sql_insert"] if "tags" in sql and table["name"] in sql.get("tags")]
-                    for stmt in table_insert_statements:
-                        logger.log_verbose_sql(stmt)
-                        output = self._execute(stmt, False)
-                        if output.state != Result.SUCCESS:
-                            logger.log_error(f'Error while executing additional insert: {output.message}')
-                            raise Exception(f'Error while executing additional insert: {output.message}')
-                        time += output.client_total[0]
 
                 logger.log_verbose_dbms(f'Loaded {table["name"]} in {formatter.format_time(time)}', self)
-
-        table_names = {table["name"] for table in schema['tables']}
-        if "additional_sql_insert" in schema:
-            with logger.LogProgress("Executing additional queries...", len(schema["additional_sql_insert"])) as progress:
-                for statement in schema["additional_sql_insert"]:
-                    if "tags" in statement and (set(statement.get("tags")) <= table_names):
-                        continue
-                    progress.next('Executing additional query...')
-                    logger.log_verbose_sql(statement["query"])
-                    output = self._execute(statement["query"], False)
-                    if output.state != Result.SUCCESS:
-                        logger.log_error(f'Error while executing additional query: {output.message}')
-                        raise Exception(f'Error while executing additional query: {output.message}')
-                    time = output.client_total[0]
-                    progress.finish()
-                    logger.log_verbose_dbms(f'Executed additional query in {formatter.format_time(time)}', self)
 
     def benchmark_query(self, queries: list[(str, str)], repetitions: int, warmup: int, timeout: int = 0, fetch_result: bool = True) -> list[str, Result]:
         results: dict[str, Result] = {}

@@ -1,19 +1,20 @@
 import os
 import tempfile
-import threading
 import time
 
-import simplejson as json
+import clickhouse_connect
 
 from benchmarks.benchmark import Benchmark
 from dbms.dbms import DBMS, Result, DBMSDescription
-from util import logger, sql, process
+from util import formatter, logger, process, sql
 
 
 class ClickHouse(DBMS):
 
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):
         super().__init__(benchmark, db_dir, data_dir, params, settings)
+
+        self._client = None
 
     @property
     def name(self) -> str:
@@ -24,7 +25,8 @@ class ClickHouse(DBMS):
         return f'clickhouse:{self._version}'
 
     def connection_string(self) -> str:
-        return "docker exec -it docker_clickhouse clickhouse-client -d clickhouse"
+        # HTTP endpoint exposed to the host
+        return "http://localhost:54325/?database=clickhouse&password=clickhouse"
 
     def __enter__(self):
         # prepare database directory
@@ -34,25 +36,54 @@ class ClickHouse(DBMS):
         # start Docker container
         self.container_name = "docker_clickhouse"
         clickhouse_environment = {
-            "CLICKHOUSE_DB": "clickhouse"
+            "CLICKHOUSE_DB": "clickhouse",
+            "CLICKHOUSE_PASSWORD": "clickhouse"
         }
         docker_params = {
             "name": self.container_name,
             "shm_size": "%d" % self._buffer_size,
             "stdin_open": True,
         }
-        self._start_container(clickhouse_environment, 9005, 54325, self.host_dir.name, "/var/lib/clickhouse/", docker_params=docker_params)
+        # Expose HTTP port (8123 in container) to a fixed host port
+        self._start_container(clickhouse_environment, 8123, 54325, self.host_dir.name, "/var/lib/clickhouse/", docker_params=docker_params)
 
         logger.log_verbose_dbms("Starting ClickHouse docker image ...", self)
 
         start_time = time.time()
         timeout = 120  # 2 minutes
-        while time.time() - start_time < timeout and self.container.exec_run('clickhouse-client -d clickhouse --query "select 1"').exit_code != 0:
-            time.sleep(1)  # 1 second
+        self._client = None
+        while time.time() - start_time < timeout:
+            try:
+                if self._container_status() != "running":
+                    time.sleep(1)
+                    continue
+
+                self._client = clickhouse_connect.get_client(
+                    host='localhost',
+                    port=54325,
+                    username=os.environ.get('CLICKHOUSE_USER', 'default'),
+                    password=os.environ.get('CLICKHOUSE_PASSWORD', 'clickhouse'),
+                    database='clickhouse'
+                )
+                # Simple readiness probe
+                self._client.query('select 1')
+                break
+            except Exception as e:
+                time.sleep(1)  # 1 second
+
+        if self._client is None:
+            raise Exception(f"Unable to connect to {self.name}")
+
+        logger.log_verbose_dbms(f"Established connection to {self.name}", self)
 
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass
         self._close_container()
         self.temp_dir.cleanup()
         self.host_dir.cleanup()
@@ -68,99 +99,97 @@ class ClickHouse(DBMS):
         return sql.create_table_statements(schema, extra_text="engine=MergeTree")
 
     def _copy_statements(self, schema: dict) -> list[str]:
-        stmts = []
-        for i, table in enumerate(schema["tables"]):
-            if schema['delimiter'] == '\t':
-                stmts.append(f"insert into {table['name']} from infile '/data/{table['file']}' format TSV;")
-            else:
-                stmts.append(f"set format_csv_delimiter='{schema['delimiter']}';" +
-                             f"insert into {table['name']} from infile '/data/{table['file']}' format CSV;")
-        return stmts
+        non_empty_tables = [table for table in schema['tables'] if not table.get("initially empty", False) and not self._benchmark.empty()]
 
-    def _execute_in_container(self, command: str, timeout: int = 0):
-        timer = None
-        if timeout > 0:
-            timer = threading.Timer(timeout, self._kill_container)
-            timer.start()
+        settings = {'input_format_allow_errors_num': 0}
+        settings.update(self._settings if self._settings else {})
+        if schema['delimiter'] != '\t':
+            settings['format_csv_delimiter'] = schema['delimiter']
 
-        logger.log_verbose_process(command)
-        result = self.container.exec_run(command)
+        with logger.LogProgress("Loading tables...", len(schema["tables"])) as progress:
+            for table in schema["tables"]:
+                progress.next(f'Loading {table["name"]}...')
+                begin = time.time()
+                if table in non_empty_tables:
+                    try:
+                        query_path = os.path.join(self.temp_dir.name, "query.sql")
+                        with open(query_path, 'w') as query_sql:
+                            query_sql.write("set allow_experimental_join_condition=1;\n")
+                            query_sql.write("set allow_experimental_analyzer=1;\n")
+                            for key, value in self._settings.items():
+                                if isinstance(value, str):
+                                    query_sql.write(f"set {key}='{value}';\n")
+                                else:
+                                    query_sql.write(f"set {key}={value};\n")
 
-        if timer is not None:
-            timer.cancel()
-            timer.join()
+                            if schema['delimiter'] == '\t':
+                                query_sql.write(f"insert into {table['name']} from infile '/data/{table['file']}' format TSV;")
+                            else:
+                                query_sql.write(f"set format_csv_delimiter='{schema['delimiter']}';")
+                                query_sql.write(f"insert into {table['name']} from infile '/data/{table['file']}' format CSV;")
 
-        if result.exit_code != 0:
-            logger.log_verbose_process_stderr(result.output.decode('utf-8'))
-            raise Exception(result.output.decode('utf-8'))
-        else:
-            if result.output:
-                logger.log_verbose_process(result.output.decode('utf-8').strip())
+                        process.Process(f"docker cp {query_path} {self.container_name}:/tmp/query.sql").run()
 
-        return result
+                        self._execute_in_container(f'bash -c "clickhouse-client --time --format="Null" -d clickhouse --password clickhouse --queries-file=/tmp/query.sql"')
+                    except Exception as e:
+                        logger.log_error(f'Error while loading table: {str(e)}')
+                        raise Exception(f'Error while loading table: {str(e)}')
+                total = time.time() - begin
+
+                logger.log_verbose_dbms(f'Loaded {table["name"]} in {formatter.format_time(total)}', self)
+                progress.finish()
+
+        return []
 
     def _execute(self, query: str, fetch_result: bool, timeout: int = 0, fetch_result_limit: int = 0) -> Result:
         result = Result()
-
-        query_path = os.path.join(self.temp_dir.name, "query.sql")
-        with open(query_path, 'w') as query_sql:
-            query_sql.write("set allow_experimental_join_condition=1;\n")
-            query_sql.write("set allow_experimental_analyzer=1;\n")
-            for key, value in self._settings.items():
-                if isinstance(value, str):
-                    query_sql.write(f"set {key}='{value}';\n")
-                else:
-                    query_sql.write(f"set {key}={value};\n")
-            if timeout > 0:
-                query_sql.write(f"set max_execution_time={timeout};\n")
-
-            query_sql.write(query)
-            query_sql.write("\n")
-
-        process.Process(f"docker cp {query_path} {self.container_name}:/tmp/query.sql").run()
+        # Prepare per-query settings
+        settings = {}
+        settings.update(self._settings if self._settings else {})
+        settings['allow_experimental_join_condition'] = 1
+        settings['allow_experimental_analyzer'] = 1
+        if timeout and timeout > 0:
+            settings['max_execution_time'] = timeout
 
         begin = time.time()
         try:
-            return_value = self._execute_in_container(
-                f'bash -c "clickhouse-client --time --format={"Null" if not fetch_result else "JSONCompactEachRowWithNamesAndTypes"} -d clickhouse --queries-file=/tmp/query.sql > /tmp/result.json"', timeout=timeout * 10)
+            summary = None
+            if fetch_result:
+                qres = self._client.query(query, settings=settings)
+                # Convert tuples to lists for consistency with existing interface
+                client_total = (time.time() - begin) * 1000.0
+
+                for row in qres.result_rows:
+                    result.result.append(list(row))
+                result.rows = len(result.result)
+                if fetch_result_limit > 0 and len(result.result) > fetch_result_limit:
+                    result.result = result.result[:fetch_result_limit]
+
+                # Obtain server-side elapsed if available
+                summary = qres.summary
+            else:
+                cres = self._client.command(query, settings=settings)
+                client_total = (time.time() - begin) * 1000.0
+
+                summary = cres.summary
+
+            result.client_total.append(client_total)
+            elapsed_ms = int(summary.get('elapsed_ns', None)) * 1e-6 if summary else None
+            if elapsed_ms is not None:
+                result.total.append(elapsed_ms)
+            return result
         except Exception as e:
-            client_total = time.time() - begin
+            client_total = (time.time() - begin) * 1000.0
             if self._container_status() != "running":
+                # Container died; propagate exception
                 raise e
 
             result.message = str(e)
-            result.state = Result.TIMEOUT if "Timeout exceeded" in result.message else Result.ERROR
-            result.client_total.append(timeout * 1000 if result.state == Result.TIMEOUT else client_total * 1000)
+            msg_lower = result.message.lower()
+            is_timeout = 'timeout' in msg_lower or 'time out' in msg_lower or 'deadline' in msg_lower
+            result.state = Result.TIMEOUT if is_timeout else Result.ERROR
+            result.client_total.append(timeout * 1000 if result.state == Result.TIMEOUT and timeout else client_total)
             return result
-
-        if fetch_result:
-            result_path = os.path.join(self.temp_dir.name, "result.json")
-            process.Process(f'docker cp {self.container_name}:/tmp/result.json {result_path}').run()
-            with open(result_path, 'r') as result_file:
-                lines = result_file.readlines()
-                types = json.loads(lines[1].strip())
-
-                for line in lines[2:]:
-                    if line.strip() == "":
-                        continue
-
-                    row = []
-                    for i, value in enumerate(json.loads(line.strip(), use_decimal=True)):
-                        if (types[i] == 'UInt64' or types[i] == 'Int64') and isinstance(value, str):
-                            value = int(value)
-                        row.append(value)
-                    result.result.append(row)
-
-            result.rows = len(result.result)
-            if len(result.result) > fetch_result_limit and fetch_result_limit > 0:
-                result.result = result.result[:fetch_result_limit]
-
-        client_total = (time.time() - begin) * 1000
-        output = return_value.output.decode('utf-8').strip()
-        total_time = float(output.split('\n')[-1]) * 1000
-        result.client_total.append(client_total)
-        result.total.append(total_time)
-        return result
 
 
 class ClickHouseDescription(DBMSDescription):

@@ -162,6 +162,7 @@ class Umbra(Postgres):
             "sqlserver": "sqlserver",
             "apollo": "sqlserver",
             "clickhouse": "clickhouse",
+            "duckdb": "duckdb",
             "singlestore": "mysql",
         }
         dialect = "postgresql" if dialect not in dialects else dialects[dialect]

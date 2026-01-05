@@ -9,7 +9,7 @@ from (select count(*) amc
         and ws_web_page_sk = web_page.wp_web_page_sk
         and time_dim.t_hour between 10 and 10 + 1
         and household_demographics.hd_dep_count = 7
-        and web_page.wp_char_count between 5000 and 5200) at,
+        and web_page.wp_char_count between 5000 and 5200) att,
      (select count(*) pmc
       from web_sales,
            household_demographics,

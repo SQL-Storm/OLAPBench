@@ -14,6 +14,8 @@ class Benchmark(ABC):
         self._base_dir = base_dir
         self._included_queries = included_queries
         self._excluded_queries = excluded_queries
+        if self._included_queries is None and args.get("queries", None) is not None:
+            self._included_queries = args.get("queries", None)
 
         self.query_dir = args.get("query_dir", None)
 
@@ -123,7 +125,9 @@ class BenchmarkDescription:
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser):
-        parser.add_argument("--query-dir", dest="query_dir", type=str, default=None, help="use other queries (name must be of the form `queries_<name>` and the directory must be in the benchmark directory)")
+        parser.add_argument("--query-dir", dest="query_dir", type=str, default=None,
+                            help="use other queries (name must be of the form `queries_<name>` and the directory must be in the benchmark directory)")
+        parser.add_argument("--queries", dest="queries", type=str, nargs='*', default=None, help="list of queries to execute (by filename)")
 
     @staticmethod
     def instantiate(base_dir: str, args: dict, included_queries: list[str] = None, excluded_queries: list[str] = None) -> Benchmark:

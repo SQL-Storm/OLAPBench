@@ -47,7 +47,8 @@ class ClickHouse(DBMS):
         # Expose HTTP port (8123 in container) to a fixed host port
         self._start_container(clickhouse_environment, 8123, 54325, self.host_dir.name, "/var/lib/clickhouse/", docker_params=docker_params)
 
-        logger.log_verbose_dbms("Starting ClickHouse docker image ...", self)
+        logger.log_verbose_dbms(f"Connecting to {self.name}...", self)
+        time.sleep(5)
 
         start_time = time.time()
         timeout = 120  # 2 minutes

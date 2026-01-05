@@ -110,8 +110,9 @@ class Postgres(DBMS):
             "shm_size": "%d" % self._buffer_size,
             "command": "postgres -c config_file=/db/postgres.conf",
         }
-        self._start_container(postgres_environment, 5432, 54321, self.host_dir.name, "/db", docker_params=docker_params)
-        self._connect("postgres", "postgres", "postgres", 54321)
+        self._host_port = self._host_port if self._host_port is not None else 54321
+        self._start_container(postgres_environment, 5432, self._host_port, self.host_dir.name, "/db", docker_params=docker_params)
+        self._connect("postgres", "postgres", "postgres", self._host_port)
 
         return self
 

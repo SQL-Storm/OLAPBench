@@ -30,8 +30,9 @@ class Hyper(DuckDB):
 
         # start Docker container
         docker_params = {}
-        self._start_container({}, 5432, 54326, self.host_dir.name, "/db", docker_params=docker_params)
-        self._connect(54326)
+        self._host_port = self._host_port if self._host_port is not None else 54326
+        self._start_container({}, 5432, self._host_port, self.host_dir.name, "/db", docker_params=docker_params)
+        self._connect(self._host_port)
 
         return self
 

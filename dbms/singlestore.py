@@ -32,13 +32,14 @@ class SingleStore(SQLServer):
         docker_params = {
             "command": ["/bin/sh", "-c", "ls -al /etc/memsql/memsqlctl.hcl && sed -i 's/user = \"memsql\"/user = \"local\"/' /etc/memsql/memsqlctl.hcl && /startup"]
         }
-        self._start_container(singlestore_environment, 3306, 33061, self.host_dir.name, "/var/lib/memsql", docker_params=docker_params)
-        self._connect("DRIVER={MariaDB};SERVER=127.0.0.1;PORT=33061;TrustServerCertificate=yes;UID=root;PWD=SingleStore;OPTION=" + str(67108864 + 1048576))
+        self._host_port = self._host_port if self._host_port is not None else 33061
+        self._start_container(singlestore_environment, 3306, self._host_port, self.host_dir.name, "/var/lib/memsql", docker_params=docker_params)
+        self._connect(f"DRIVER={{MariaDB}};SERVER=127.0.0.1;PORT={self._host_port};TrustServerCertificate=yes;UID=root;PWD=SingleStore;OPTION=" + str(67108864 + 1048576))
 
         self.cursor.execute("CREATE DATABASE benchy;")
         self.cursor.close()
 
-        self._connect("DRIVER={MariaDB};SERVER=127.0.0.1;PORT=33061;DATABASE=benchy;TrustServerCertificate=yes;UID=root;PWD=SingleStore;OPTION=" + str(67108864 + 1048576))
+        self._connect(f"DRIVER={{MariaDB}};SERVER=127.0.0.1;PORT={self._host_port};DATABASE=benchy;TrustServerCertificate=yes;UID=root;PWD=SingleStore;OPTION=" + str(67108864 + 1048576))
         self.cursor.execute("SET sql_mode = 'ANSI_QUOTES';")
 
         return self
@@ -66,7 +67,8 @@ class SingleStore(SQLServer):
         DBMS.load_database(self)
 
     def connection_string(self) -> str:
-        return 'iusql "DRIVER={MariaDB};Server=127.0.0.1;Port=33061;DATABASE=benchy;TrustServerCertificate=yes;UID=root;PWD=SingleStore;OPTION=68157440" -v'
+        port = getattr(self, '_host_port', 33061)
+        return f'iusql "DRIVER={{MariaDB}};Server=127.0.0.1;Port={port};DATABASE=benchy;TrustServerCertificate=yes;UID=root;PWD=SingleStore;OPTION=68157440" -v'
 
 
 class SingleStoreDescription(DBMSDescription):

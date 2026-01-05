@@ -26,7 +26,8 @@ class ClickHouse(DBMS):
 
     def connection_string(self) -> str:
         # HTTP endpoint exposed to the host
-        return "http://localhost:54325/?database=clickhouse&password=clickhouse"
+        port = getattr(self, '_host_port', 54325)
+        return f"http://localhost:{port}/?database=clickhouse&password=clickhouse"
 
     def __enter__(self):
         # prepare database directory
@@ -44,8 +45,9 @@ class ClickHouse(DBMS):
             "shm_size": "%d" % self._buffer_size,
             "stdin_open": True,
         }
-        # Expose HTTP port (8123 in container) to a fixed host port
-        self._start_container(clickhouse_environment, 8123, 54325, self.host_dir.name, "/var/lib/clickhouse/", docker_params=docker_params)
+        # Expose HTTP port (8123 in container) to host port (from params or default 54325)
+        self._host_port = self._host_port if self._host_port is not None else 54325
+        self._start_container(clickhouse_environment, 8123, self._host_port, self.host_dir.name, "/var/lib/clickhouse/", docker_params=docker_params)
 
         logger.log_verbose_dbms(f"Connecting to {self.name}...", self)
         time.sleep(5)
@@ -61,7 +63,7 @@ class ClickHouse(DBMS):
 
                 self._client = clickhouse_connect.get_client(
                     host='localhost',
-                    port=54325,
+                    port=self._host_port,
                     username=os.environ.get('CLICKHOUSE_USER', 'default'),
                     password=os.environ.get('CLICKHOUSE_PASSWORD', 'clickhouse'),
                     database='clickhouse'

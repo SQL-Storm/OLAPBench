@@ -63,8 +63,9 @@ class SQLServer(DBMS):
         docker_params = {
             "shm_size": "%d" % self._buffer_size,
         }
-        self._start_container(sqlserver_environment, 1433, 14331, self.host_dir.name, "/var/opt/mssql", docker_params=docker_params)
-        self._connect("DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,14331;UID=SA;TrustServerCertificate=yes;PWD=yourStsrong(!)Password")
+        self._host_port = self._host_port if self._host_port is not None else 14331
+        self._start_container(sqlserver_environment, 1433, self._host_port, self.host_dir.name, "/var/opt/mssql", docker_params=docker_params)
+        self._connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER=localhost,{self._host_port};UID=SA;TrustServerCertificate=yes;PWD=yourStsrong(!)Password")
 
         # configure SQL server
         self.cursor.execute("EXEC sp_configure 'show advanced options', '1'")

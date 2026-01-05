@@ -29,8 +29,9 @@ class CedarDB(Postgres):
         docker_params = {
             "ulimits": [docker.types.Ulimit(name="memlock", soft=2 ** 30, hard=2 ** 30)],
         }
-        self._start_container({}, 5432, 54324, self.host_dir.name, "/var/lib/cedardb/data", docker_params=docker_params)
-        self._connect("postgres", "postgres", "postgres", 54324)
+        self._host_port = self._host_port if self._host_port is not None else 54324
+        self._start_container({}, 5432, self._host_port, self.host_dir.name, "/var/lib/cedardb/data", docker_params=docker_params)
+        self._connect("postgres", "postgres", "postgres", self._host_port)
 
         return self
 

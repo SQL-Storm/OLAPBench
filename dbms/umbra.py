@@ -130,8 +130,9 @@ class Umbra(Postgres):
         docker_params = {
             "ulimits": [docker.types.Ulimit(name="memlock", soft=2 ** 30, hard=2 ** 30)],
         }
-        self._start_container(environment, 5432, 54322, self.umbra_db_dir, "/var/db", docker_params=docker_params)
-        self._connect("postgres", "postgres", "postgres", 54322)
+        self._host_port = self._host_port if self._host_port is not None else 54322
+        self._start_container(environment, 5432, self._host_port, self.umbra_db_dir, "/var/db", docker_params=docker_params)
+        self._connect("postgres", "postgres", "postgres", self._host_port)
 
         return self
 

@@ -89,8 +89,9 @@ class DuckDB(DBMS):
 
         # start Docker container
         docker_params = {}
-        self._start_container({}, 5432, 54323, self.host_dir.name, "/db", docker_params=docker_params)
-        self._connect(54323)
+        self._host_port = self._host_port if self._host_port is not None else 54323
+        self._start_container({}, 5432, self._host_port, self.host_dir.name, "/db", docker_params=docker_params)
+        self._connect(self._host_port)
 
         for (setting, value) in self._settings.items():
             self._execute(f"PRAGMA {setting}=\'{value}\';", fetch_result=False)

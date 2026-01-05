@@ -125,6 +125,7 @@ class DBMS(ABC):
         self._version = params.get("version", "latest")
         self._umbra_planner = params.get("umbra_planner", False)
         self._docker = docker.from_env()
+        self._host_port = params.get('host_port', None)
 
         self._settings = settings
 

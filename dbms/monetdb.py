@@ -38,6 +38,8 @@ class MonetDB(DBMS):
         client = docker.from_env()
         client.images.pull(self.docker_image)
 
+        self._host_port = self._host_port if self._host_port is not None else 50001
+
         self.container = client.containers.run(
             image=self.docker_image,
             auto_remove=True,
@@ -48,7 +50,7 @@ class MonetDB(DBMS):
             cpuset_cpus=self._cpuset_cpus,
             cpuset_mems=self._cpuset_mems,
             ports={
-                "50000/tcp": 50001
+                "50000/tcp": self._host_port
             },
             volumes={
                 self.host_dir.name: {"bind": "/var/monetdb5", "mode": "rw"},
@@ -64,7 +66,7 @@ class MonetDB(DBMS):
         check_timeout = 120  # 2 minutes
         while time.time() - start_time < check_timeout:
             try:
-                self.connection = pymonetdb.connect(database="main", user="monetdb", password="monetdb", host="localhost", port=50001, autocommit=True)
+                self.connection = pymonetdb.connect(database="main", user="monetdb", password="monetdb", host="localhost", port=self._host_port, autocommit=True)
                 break
             except Exception as e:
                 time.sleep(1)

@@ -145,6 +145,10 @@ class Postgres(DBMS):
 
             result.rows = self.cursor.rowcount
             if fetch_result:
+                # Extract column names from cursor description
+                if self.cursor.description:
+                    result.columns = [desc[0] for desc in self.cursor.description]
+
                 if fetch_result_limit > 0:
                     result.result = self.cursor.fetchmany(fetch_result_limit)
                 else:
@@ -182,8 +186,8 @@ class Postgres(DBMS):
 
         return result
 
-    def retrieve_query_plan(self, query: str, include_system_representation: bool = False) -> QueryPlan:
-        result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True).result
+    def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> QueryPlan:
+        result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True, timeout=timeout).result
         json_plan = result[0][0][0]
         plan_parser = PostgresParser(include_system_representation=include_system_representation)
         query_plan = plan_parser.parse_json_plan(query, json_plan)

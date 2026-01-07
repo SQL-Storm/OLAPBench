@@ -1,0 +1,26 @@
+# Example server configuration for interactive querying
+# Start DBMS instances and expose HTTP endpoints
+
+benchmark:
+  name: tpch
+  scale: 0.01
+
+# Optional: specify which Umbra/UmbraDev instance to use for query optimization
+# If not specified, the first umbra or umbradev instance will be used
+# optimizer: "Umbra latest"
+
+systems:
+  - title: Umbra
+    dbms: umbradev
+    disabled: false
+    settings: {}
+
+  - title: DuckDB
+    dbms: duckdb
+    disabled: false
+
+  - title: DuckDB (no join optimizer)
+    dbms: duckdb
+    disabled: false
+    settings:
+      disabled_optimizers: "join_order,build_side_probe_side"

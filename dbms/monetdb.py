@@ -110,6 +110,10 @@ class MonetDB(DBMS):
 
         result.rows = self.cursor.rowcount
         if fetch_result:
+            # Extract column names from cursor description
+            if self.cursor.description:
+                result.columns = [desc[0] for desc in self.cursor.description]
+
             if fetch_result_limit > 0:
                 result.result = self.cursor.fetchmany(fetch_result_limit)
             else:

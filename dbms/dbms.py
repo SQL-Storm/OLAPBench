@@ -30,6 +30,7 @@ class Result:
         self.rows: Optional[int] = None
         self.extra: Dict[str, float] = {}
         self.result: List[List[any]] = []
+        self.columns: List[str] = []
         self.message: str = ""
         self.plan: Optional[QueryPlan] = None
 
@@ -297,7 +298,7 @@ class DBMS(ABC):
 
         return results
 
-    def retrieve_query_plan(self, query: str, include_system_representation: bool = False) -> QueryPlan:
+    def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> QueryPlan:
         return None
 
     def connection_string(self) -> str:

@@ -52,16 +52,6 @@ while true; do
         break
     else
         echo "Benchmark failed with exit code $EXIT_CODE. Retrying..."
-
-	# Get olapbench docker containers
-	CONTAINERS=$(docker ps --format '{{.ID}} {{.Image}}' | grep '.*/olapbench/.*' | awk '{print $1}')
-
-	# Check if any containers matched
-	if [ -n "$CONTAINERS" ]; then
-	    echo "Killing containers:"
-	    echo "  $CONTAINERS"
-	    echo "$CONTAINERS" | xargs docker kill
-	fi
     fi
 
     if $NORETRY; then

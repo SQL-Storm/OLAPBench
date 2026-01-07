@@ -82,7 +82,8 @@ def main():
                         results[version] = []
                     results[row["version"]].append(query)
 
-        queries = [name for name, _ in benchmark.queries(dbms)]
+        query_list, _ = benchmark.queries(dbms)
+        queries = [name for name, _ in query_list]
         for version in results:
             if set(queries) != set(results[version]):
                 raise Exception(f"Mismatch between expected queries and results for version '{version}'.")

@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "title": "OLAP Server Configuration Schema",
+  "description": "Schema for the HTTP server configuration that manages DBMS instances for interactive querying",
+  "definitions": {
+    "system": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Display name for the DBMS instance (supports template variables like ${version})"
+        },
+        "dbms": {
+          "type": "string",
+          "enum": [
+            "apollo",
+            "cedardb",
+            "clickhouse",
+            "duckdb",
+            "hyper",
+            "monetdb",
+            "postgres",
+            "singlestore",
+            "sqlserver",
+            "umbra",
+            "umbradev"
+          ],
+          "description": "Database management system type"
+        },
+        "disabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, this system will not be started"
+        },
+        "parameter": {
+          "type": "object",
+          "properties": {
+            "buffer_size": {
+              "type": "string",
+              "description": "Buffer pool size (e.g., '4GB', '512M')"
+            },
+            "worker_threads": {
+              "type": "integer",
+              "description": "Number of worker threads"
+            },
+            "numa_node": {
+              "type": "integer",
+              "enum": [1, 2, 3, 4],
+              "description": "NUMA node to bind execution to"
+            },
+            "index": {
+              "type": "string",
+              "enum": ["none", "primary", "foreign"],
+              "default": "primary",
+              "description": "Which indexes to build"
+            },
+            "version": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
+              "description": "DBMS version (first value will be used if array)"
+            },
+            "umbra_planner": {
+              "type": "boolean",
+              "description": "Use Umbra query planner"
+            },
+            "umbra_planner_parameter": {
+              "type": "object",
+              "description": "Parameters for Umbra planner"
+            },
+            "umbra_planner_settings": {
+              "type": "object",
+              "description": "Settings for Umbra planner"
+            }
+          },
+          "additionalProperties": true
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "DBMS-specific settings"
+        }
+      },
+      "required": ["title", "dbms"],
+      "additionalProperties": false
+    },
+    "benchmark": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Benchmark name (e.g., 'tpch', 'tpcds', 'clickbench')"
+        },
+        "scale": {
+          "type": "number",
+          "description": "Scale factor for the benchmark dataset"
+        },
+        "query_dir": {
+          "type": "string",
+          "description": "Optional query directory suffix"
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": true
+    }
+  },
+  "type": "object",
+  "properties": {
+    "benchmark": {
+      "$ref": "#/definitions/benchmark",
+      "description": "Benchmark configuration (optional if specified on command line)"
+    },
+    "optimizer": {
+      "type": "string",
+      "description": "Name of the Umbra/UmbraDev instance to use for query optimization (optional, defaults to first umbra/umbradev instance)"
+    },
+    "systems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/system"
+      },
+      "minItems": 1,
+      "description": "List of DBMS systems to start and manage"
+    }
+  },
+  "required": ["systems"],
+  "additionalProperties": false
+}

@@ -33,3 +33,7 @@ py-libnuma
 
 # Logging
 rich
+
+# HTTP Server
+flask
+flask-cors

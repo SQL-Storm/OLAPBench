@@ -19,7 +19,7 @@ from benchmarks.benchmark import benchmark_arguments, benchmarks, Benchmark
 from dbms.dbms import Result, database_systems
 from util import logger, formatter, schemajson
 from util.resultcsv import ResultCSV
-from util.template import Template
+from util.template import Template, unfold
 
 workdir = os.getcwd()
 csv.field_size_limit(sys.maxsize)
@@ -50,7 +50,7 @@ class Runtime:
 
 
 def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict, result_dir: str, db_dir: str, data_dir: str):
-    logger.log_driver(f"Preparing {benchmark.description}")
+    logger.log_driver(f"Preparing {benchmark.fullname}")
     dbms_descriptions = database_systems()
 
     timeout = definition.get("timeout", 0)
@@ -126,7 +126,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
             match benchmark_type:
                 case "queries":
                     umbra_planner = system.params.get("umbra_planner", False)
-                    queries = benchmark.queries("umbra" if umbra_planner else system.dbms)
+                    queries, _ = benchmark.queries("umbra" if umbra_planner else system.dbms)
 
                     # Shuffle the queries
                     if query_seed is not None:
@@ -214,7 +214,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                             retrieve_query_plan = query_plan.get("retrieve", False)
                             if retrieve_query_plan and result.state == Result.SUCCESS:
                                 system_representation = query_plan.get("system_representation", False)
-                                result.plan = dbms.retrieve_query_plan(query, include_system_representation=system_representation)
+                                result.plan = dbms.retrieve_query_plan(query, include_system_representation=system_representation, timeout=timeout)
 
                             result.round(3)
                             result_csv_file.olap(system.title, system.dbms, dbms.version, name, result)
@@ -262,23 +262,6 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
 
                 else:
                     raise ValueError("benchmark type not supported")
-
-
-def unfold(d: dict) -> List[dict]:
-    """
-    Unfolds a dictionary with list values into a list of dictionaries with all possible combinations of the values.
-
-    Args:
-        d (dict): A dictionary where the values are either lists or single elements.
-
-    Returns:
-        List[dict]: A list of dictionaries, each representing a unique combination of the input dictionary's values.
-    """
-    if not d:
-        return [{}]
-
-    keys, values = zip(*((k, v if isinstance(v, list) else [v]) for k, v in d.items()))
-    return [dict(zip(keys, combination)) for combination in itertools.product(*values)]
 
 
 def clear(benchmark: Benchmark, result_dir: str):

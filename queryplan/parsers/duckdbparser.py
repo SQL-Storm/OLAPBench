@@ -47,6 +47,13 @@ class DuckDBParser(PlanParser):
             children = []
             for child in json_plan["children"]:
                 children.append(self.build_initial_plan(child))
+
+            if operator_type == "PROJECTION":
+                assert len(children) == 1
+                if children[0].estimated_cardinality is None:
+                    children[0].estimated_cardinality = estimated_cardinality
+                return children[0]
+            
             return InnerNode(operator, estimated_cardinality=estimated_cardinality, exact_cardinality=exact_cardinality, children=children, system_representation=system_representation)
 
     def create_empty_operator(self, operator_name: str, operator_id: int) -> QueryOperator:
@@ -59,12 +66,14 @@ class DuckDBParser(PlanParser):
                 return CustomOperator("Projection", operator_id)
             case "COLUMN_DATA_SCAN" | "DUMMY_SCAN":
                 return InlineTable(operator_id)
-            case "TABLE_SCAN" | "DELIM_SCAN":
+            case "TABLE_SCAN":
                 return TableScan(operator_id)
+            case "DELIM_SCAN":
+                return CustomOperator("DelimScan", operator_id)
             case operator_name if operator_name.endswith("JOIN"):
                 return Join(operator_id)
             case "TOP_N":
-                return CustomOperator("TopN", operator_id)
+                return Sort(operator_id)
             case "FILTER":
                 return Select(operator_id)
             case "LIMIT" | "STREAMING_LIMIT":

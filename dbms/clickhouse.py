@@ -162,6 +162,9 @@ class ClickHouse(DBMS):
                 # Convert tuples to lists for consistency with existing interface
                 client_total = (time.time() - begin) * 1000.0
 
+                # Extract column names
+                result.columns = qres.column_names
+
                 for row in qres.result_rows:
                     result.result.append(list(row))
                 result.rows = len(result.result)

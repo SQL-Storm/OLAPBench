@@ -195,10 +195,31 @@ class UmbraDev(Umbra):
 
         if fetch_result:
             with open(result_file, "r") as file:
-                result.result = file.readlines()
-                result.rows = len(result.result) - 1
-                if len(result.result) > fetch_result_limit and fetch_result_limit > 0:
-                    result.result = result.result[:fetch_result_limit]
+                if query.strip().lower().startswith("explain"):
+                    result.result = [["\n".join(file.readlines())]]
+                    result.columns = ["plan"]
+                    result.rows = 1
+                    return result
+
+                # Parse CSV with space delimiter, quote character ", and NULL representation
+                reader = csv.reader(file, delimiter=' ', quotechar='"')
+                rows = []
+                for row in reader:
+                    # Convert NULL strings to None
+                    parsed_row = [None if val == 'NULL' else val for val in row]
+                    rows.append(parsed_row)
+
+                # Extract column names from header row
+                if rows:
+                    result.columns = rows[0]
+                    result.result = rows[1:]  # Skip header row
+                    result.rows = len(result.result)
+                    if len(result.result) > fetch_result_limit and fetch_result_limit > 0:
+                        result.result = result.result[:fetch_result_limit]
+                else:
+                    result.result = []
+                    result.columns = []
+                    result.rows = 0
         else:
             result.rows = -1
 
@@ -229,9 +250,9 @@ class UmbraDev(Umbra):
         time.sleep(1)
         self.process.read_and_discard()
 
-    def retrieve_query_plan(self, query: str, include_system_representation: bool = False) -> QueryPlan:
-        result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True).result
-        text_plan = "".join(result)
+    def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> QueryPlan:
+        result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True, timeout=timeout).result
+        text_plan = result[0][0]
         json_plan = json.loads(text_plan, allow_nan=True)
         plan_parser = UmbraParser(include_system_representation=include_system_representation)
         query_plan = plan_parser.parse_json_plan(query, json_plan)

@@ -66,10 +66,16 @@ async def execute_query(payload: dict):
         result = []
         rows = -1
         error_message = None
+        columns = []
 
         begin = time.time()
         try:
-            result = conn.execute_list_query(query=query.strip())
+            cursor = conn.execute_query(query=query.strip())
+            
+            # Extract column names
+            columns = [col.name for col in cursor.schema.columns]
+            
+            result = cursor.fetchall()
 
             if fetch:
                 rows = len(result)
@@ -110,7 +116,12 @@ async def execute_query(payload: dict):
     # Log results
     if fetch:
         with open(results_path, "w") as f:
-            f.write(json.dumps(result, use_decimal=True, default=sql_encoder, allow_nan=True))
+            # Store columns and results separately
+            result_data = {
+                "columns": columns,
+                "results": result
+            }
+            f.write(json.dumps(result_data, use_decimal=True, default=sql_encoder, allow_nan=True))
 
     return {"rows": rows, "error": error_message, "client_total": client_total, "total": total, "execution": execution, "compilation": compilation}
 

@@ -165,15 +165,17 @@ class DuckDB(DBMS):
         if fetch_result:
             try:
                 with open(os.path.join(self.host_dir.name, "results.json"), 'r') as result_file:
-                    for row in json.loads(result_file.read(), use_decimal=True):
-                        output.result.append(row)
+                    result_data = json.loads(result_file.read(), use_decimal=True)
+                    # Extract columns and results from format
+                    output.columns = result_data.get("columns", [])
+                    output.result = result_data.get("results", [])
             except Exception:
                 pass
 
         return output
 
-    def retrieve_query_plan(self, query: str, include_system_representation: bool = False) -> QueryPlan:
-        result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True).result
+    def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> QueryPlan:
+        result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True, timeout=timeout).result
         if not result or not result[0]:
             return None
         json_plan = json.loads(result[0][1])

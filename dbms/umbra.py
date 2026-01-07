@@ -158,7 +158,7 @@ class Umbra(Postgres):
         else:
             logger.log_verbose_dbms("Using existing umbra database " + self.db, self)
 
-    def plan_query(self, query: str, dialect: str) -> str:
+    def plan_query(self, query: str, database: str) -> str:
         dialects = {
             "sqlserver": "sqlserver",
             "apollo": "sqlserver",
@@ -166,14 +166,14 @@ class Umbra(Postgres):
             "duckdb": "duckdb",
             "singlestore": "mysql",
         }
-        dialect = "postgresql" if dialect not in dialects else dialects[dialect]
+        dialect = "postgresql" if database not in dialects else dialects[database]
         res = self._execute(f"explain (sql, dialect {dialect}) {query}", True)
         if res.state != Result.SUCCESS:
             return None
-        return "".join(res.result)
+        return " ".join([" ".join(r) for r in res.result])
 
-    def retrieve_query_plan(self, query: str, include_system_representation: bool = False) -> QueryPlan:
-        result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True).result
+    def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> QueryPlan:
+        result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True, timeout=timeout).result
         if not result or not result[0]:
             return None
         text_plan = result[0][0]

@@ -83,7 +83,7 @@ class TableScan(QueryOperator):
                 case _:
                     log_warn(f"Unknown table scan type: {plan['Node Type']}")
         elif dbms_type == DBMSType.DuckDB:
-            table_name = plan["extra_info"]["Text"] if "Text" in plan["extra_info"] else None
+            table_name = plan["extra_info"]["Table"] if "Table" in plan["extra_info"] else None
             self.table_name = table_name
 
 
@@ -137,6 +137,8 @@ class Sort(QueryOperator):
     def fill(self, plan, dbms_type: DBMSType):
         if dbms_type == DBMSType.Umbra or dbms_type == DBMSType.Hyper:
             self.limit = plan.get("limit")
+        elif dbms_type == DBMSType.DuckDB:
+            self.limit = plan["extra_info"]["Top"] if "Top" in plan["extra_info"] else None
 
 
 class GroupBy(QueryOperator):
@@ -204,13 +206,17 @@ class Join(QueryOperator):
                     self.type = "right" + type
                 case _:
                     raise Exception("Unknown join type for DuckDB: " + type)
-            name = plan["operator_type"].replace("_JOIN", "").lower
+            name = plan["operator_type"].replace("_JOIN", "").lower()
             if name == "piecewise_merge":
                 self.method = "merge"
             elif name == "nested_loop":
                 self.method = "nl"
-            elif name == "index_join":
+            elif name == "index":
                 self.method = "index"
+            elif name == "hash":
+                self.method = "hash"
+            elif name.endswith("delim"):
+                self.method = "delim"
         elif dbms_type == DBMSType.Hyper:
             self.method = plan["method"]
 

@@ -15,6 +15,8 @@ class SQLServer(DBMS):
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):
         super().__init__(benchmark, db_dir, data_dir, params, settings)
 
+        self.force_order = params.get("force_order", False)
+
     @property
     def name(self) -> str:
         return 'sqlserver'
@@ -24,7 +26,7 @@ class SQLServer(DBMS):
         return 'mcr.microsoft.com/mssql/server:2022-latest'
 
     def connection_string(self) -> str:
-        return self._connection_string
+        return f"iusql \"{self._connection_string}\" -v"
 
     def _connect(self, connection: str):
         self.connection = None
@@ -46,8 +48,7 @@ class SQLServer(DBMS):
         if self.connection is None:
             raise Exception("could not connect to sqlserver")
 
-        self._connection_string = f"iusql \"{connection}\" -v"
-        self.cursor = self.connection.cursor()
+        self._connection_string = connection
 
         logger.log_verbose_dbms(f"Established connection to {self.name}", self)
 
@@ -58,23 +59,25 @@ class SQLServer(DBMS):
         # start Docker container
         sqlserver_environment = {
             "ACCEPT_EULA": "Y",
-            "SA_PASSWORD": "yourStsrong(!)Password"
+            "SA_PASSWORD": "Password_0",
+            "MSSQL_COLLATION": "Latin1_General_100_BIN2_UTF8",
         }
         docker_params = {
             "shm_size": "%d" % self._buffer_size,
         }
         self._host_port = self._host_port if self._host_port is not None else 14331
         self._start_container(sqlserver_environment, 1433, self._host_port, self.host_dir.name, "/var/opt/mssql", docker_params=docker_params)
-        self._connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER=localhost,{self._host_port};UID=SA;TrustServerCertificate=yes;PWD=yourStsrong(!)Password")
+        self._connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER=localhost,{self._host_port};UID=sa;TrustServerCertificate=yes;PWD=Password_0")
 
         # configure SQL server
-        self.cursor.execute("EXEC sp_configure 'show advanced options', '1'")
-        self.cursor.execute("RECONFIGURE WITH OVERRIDE")
-        self.cursor.execute("EXEC sp_configure 'max server memory', %d" % (self._buffer_size // 1024))
-        self.cursor.execute("EXEC sp_configure 'max degree of parallelism', '%d'" % self._worker_threads)
-        self.cursor.execute("EXEC sp_configure 'default trace enabled', 0")
-        self.cursor.execute("RECONFIGURE WITH OVERRIDE")
-        self.cursor.execute("SET STATISTICS TIME ON;")
+        with self.connection.cursor() as cursor:
+            cursor.execute("EXEC sp_configure 'show advanced options', '1'")
+            cursor.execute("RECONFIGURE WITH OVERRIDE")
+            cursor.execute("EXEC sp_configure 'max server memory', %d" % (self._buffer_size // 1024))
+            cursor.execute("EXEC sp_configure 'max degree of parallelism', '%d'" % self._worker_threads)
+            cursor.execute("EXEC sp_configure 'default trace enabled', 0")
+            cursor.execute("RECONFIGURE WITH OVERRIDE")
+            cursor.execute("SET STATISTICS TIME ON;")
 
         logger.log_verbose_dbms(f"Prepared sqlserver database", self)
 
@@ -82,7 +85,7 @@ class SQLServer(DBMS):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.connection.close()
-        self._close_container()
+        self._kill_container()
         self.host_dir.cleanup()
 
     def _transform_schema(self, schema):
@@ -95,10 +98,9 @@ class SQLServer(DBMS):
                 # bool is not supported in SQLServer
                 intermediate = intermediate.replace('bool', 'tinyint')
                 # varchar is called nvarchar in sqlserver
-                if 'varchar' in intermediate:
-                    intermediate = intermediate + ' COLLATE Latin1_General_100_CI_AS_SC_UTF8'
-                # text is deprecated and will be replaced by varchar(max) in SQLServer
-                intermediate = intermediate.replace('text', 'varchar(max) COLLATE Latin1_General_100_CI_AS_SC_UTF8')
+                intermediate = intermediate.replace('varchar', 'nvarchar')
+                # text is deprecated and will be replaced by nvarchar(max) in SQLServer
+                intermediate = intermediate.replace('text', 'nvarchar(max)')
                 # the type timestamp is called datetime in sqlserver
                 intermediate = intermediate.replace('timestamp', 'datetime2')
                 # update type
@@ -114,24 +116,37 @@ class SQLServer(DBMS):
     def _execute(self, query: str, fetch_result: bool, timeout: int = 0, fetch_result_limit: int = 0) -> Result:
         result = Result()
 
+        if self.force_order:
+            query = query.strip().rstrip(';')
+            query = re.sub(r'--.*\n', ' ', query)  # remove comments
+            is_select = query.upper().startswith("SELECT ") or query.upper().startswith("WITH ")
+            if not query.endswith("OPTION (FORCE ORDER)") and is_select:
+                query += " OPTION (FORCE ORDER)"
+            
+        cursor = self.connection.cursor()
+
         timer = None
         timer_kill = None
         if timeout > 0:
             timer_kill = threading.Timer(timeout * 10, self._kill_container)
             timer_kill.start()
-            timer = threading.Timer(timeout, self.cursor.cancel)
+            timer = threading.Timer(timeout, cursor.cancel)
             timer.start()
 
         begin = time.time()
         try:
-            self.cursor.execute(query)
+            cursor.execute(query)
 
-            result.rows = self.cursor.rowcount
+            result.rows = cursor.rowcount
             if fetch_result:
+                # Extract column names from cursor description
+                if cursor.description:
+                    result.columns = [desc[0] for desc in cursor.description]
+
                 if fetch_result_limit > 0:
-                    result.result = self.cursor.fetchmany(fetch_result_limit)
+                    result.result = cursor.fetchmany(fetch_result_limit)
                 else:
-                    result.result = self.cursor.fetchall()
+                    result.result = cursor.fetchall()
                     result.rows = len(result.result)
 
             client_total = time.time() - begin
@@ -146,8 +161,19 @@ class SQLServer(DBMS):
                 timer.cancel()
                 timer.join()
 
+            cursor.close()
+
+            if "TCP Provider: Error code 0x2714" in str(e):
+                # Connection lost, reconnect and try again
+                logger.log_warn(f"Lost connection to {self.name}, reconnecting...")
+                self.connection.close()
+                self._connect(self._connection_string)
+                return self._execute(query, fetch_result, timeout, fetch_result_limit)
+
             # Server is gone raise exception for restart
-            if "Lost connection to server during query" in str(e) or "Server has gone away" in str(e):
+            if "Lost connection to server during query" in str(e) \
+                    or "Server has gone away" in str(e) \
+                    or "The connection is broken and recovery is not possible" in str(e):
                 raise e
 
             logger.log_error_verbose(str(e))
@@ -165,7 +191,7 @@ class SQLServer(DBMS):
             timer.cancel()
             timer.join()
 
-        for _, m in self.cursor.messages:
+        for _, m in cursor.messages:
             if "Error" in m:
                 result.message = m
                 result.state = Result.TIMEOUT if "Query execution was interrupted" in result.message or "Operation canceled" in result.message else Result.ERROR
@@ -187,11 +213,14 @@ class SQLServer(DBMS):
         if len(result.compilation) == 1 and len(result.execution) == 1:
             result.total.append(result.compilation[0] + result.execution[0])
 
+        cursor.close()
+
         return result
 
     def load_database(self):
         super().load_database()
-        self.cursor.execute("DBCC CHECKDB")
+        with self.connection.cursor() as cursor:
+            cursor.execute("DBCC CHECKDB")
 
 
 class SQLServerDescription(DBMSDescription):

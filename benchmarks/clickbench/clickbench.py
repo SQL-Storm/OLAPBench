@@ -18,6 +18,14 @@ class ClickBench(benchmark.Benchmark):
         return "clickbench"
 
     @property
+    def nice_name(self) -> str:
+        return "ClickBench"
+
+    @property
+    def fullname(self) -> str:
+        return "ClickBench"
+
+    @property
     def description(self) -> str:
         return "ClickBench"
 

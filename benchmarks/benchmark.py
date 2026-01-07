@@ -31,6 +31,16 @@ class Benchmark(ABC):
 
     @property
     @abstractmethod
+    def nice_name(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def fullname(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
     def description(self) -> str:
         pass
 

@@ -26,8 +26,22 @@ class StackOverflow(benchmark.Benchmark):
         return "stackoverflow"
 
     @property
-    def description(self) -> str:
+    def nice_name(self) -> str:
+        return "StackOverflow"
+
+    def fullname(self) -> str:
         return "StackOverflow Benchmark"
+
+    @property
+    def description(self) -> str:
+        if self.zero:
+            return "StackOverflow (Empty)"
+        elif self.dba:
+            return "StackOverflow (DBA)"
+        elif self.math:
+            return "StackOverflow (Math)"
+        else:
+            return f"StackOverflow (SF {self.scale})"
 
     @property
     def unique_name(self) -> str:

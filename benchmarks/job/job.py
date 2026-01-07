@@ -19,8 +19,16 @@ class JOB(benchmark.Benchmark):
         return "job"
 
     @property
-    def description(self) -> str:
+    def nice_name(self) -> str:
+        return "JOB"
+
+    @property
+    def fullname(self) -> str:
         return "Join Ordering Benchmark"
+
+    @property
+    def description(self) -> str:
+        return "JOB (Empty)" if self.zero else "JOB"
 
     @property
     def unique_name(self) -> str:

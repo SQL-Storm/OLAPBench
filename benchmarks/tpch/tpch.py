@@ -21,8 +21,16 @@ class TPCH(benchmark.Benchmark):
         return "tpch"
 
     @property
-    def description(self) -> str:
+    def nice_name(self) -> str:
+        return "TPC-H"
+
+    @property
+    def fullname(self) -> str:
         return "TPC-H Benchmark"
+
+    @property
+    def description(self) -> str:
+        return f"TPC-H (SF {self.scale}{f' Skew {self.zipf}' if self.zipf != 0 else ''})"
 
     @property
     def unique_name(self) -> str:

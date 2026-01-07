@@ -19,8 +19,16 @@ class SSB(benchmark.Benchmark):
         return "ssb"
 
     @property
-    def description(self) -> str:
+    def nice_name(self) -> str:
+        return "SSB"
+
+    @property
+    def fullname(self) -> str:
         return "Star Schema Benchmark"
+
+    @property
+    def description(self) -> str:
+        return f"SSB (SF {self.scale})"
 
     @property
     def unique_name(self) -> str:

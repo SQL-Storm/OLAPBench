@@ -19,8 +19,16 @@ class TPCDS(benchmark.Benchmark):
         return "tpcds"
 
     @property
-    def description(self) -> str:
+    def nice_name(self) -> str:
+        return "TPC-DS"
+
+    @property
+    def fullname(self) -> str:
         return "TPC-DS Benchmark"
+
+    @property
+    def description(self) -> str:
+        return f"TPC-DS (SF {self.scale})"
 
     @property
     def unique_name(self) -> str:

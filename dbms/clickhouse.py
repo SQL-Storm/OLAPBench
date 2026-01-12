@@ -1,4 +1,5 @@
 import os
+import random
 import tempfile
 import time
 
@@ -35,7 +36,8 @@ class ClickHouse(DBMS):
         self.temp_dir = tempfile.TemporaryDirectory(dir=self._db_dir)
 
         # start Docker container
-        self.container_name = "docker_clickhouse"
+        # Append a short random hex suffix to avoid name collisions
+        self.container_name = "docker_clickhouse_" + format(random.getrandbits(32), '08x')
         clickhouse_environment = {
             "CLICKHOUSE_DB": "clickhouse",
             "CLICKHOUSE_PASSWORD": "clickhouse"

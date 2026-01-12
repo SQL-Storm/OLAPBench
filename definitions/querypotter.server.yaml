@@ -1,0 +1,28 @@
+optimizer: Umbra
+systems:
+  - title: Umbra
+    dbms: umbra
+    disabled: false
+    parameter:
+      version: "26.01"
+    settings: {}
+
+  - title: DuckDB
+    dbms: duckdb
+    disabled: false
+
+  - title: DuckDB (no join optimizer)
+    dbms: duckdb
+    disabled: false
+    settings:
+      disabled_optimizers: "join_order,build_side_probe_side"
+
+  - title: ClickHouse
+    dbms: clickhouse
+    disabled: false
+
+  - title: ClickHouse (no join optimizer)
+    dbms: clickhouse
+    disabled: false
+    settings:
+      query_plan_optimize_join_order_limit: 1

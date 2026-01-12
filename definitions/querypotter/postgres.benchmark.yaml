@@ -1,0 +1,44 @@
+title: Postgres
+repetitions: 5
+warmup: 3
+timeout: 60
+global_timeout: 0
+fetch_result: true
+query_plan:
+  retrieve: true
+  system_representation: true
+output: results/querypotter/postgres/
+parameter:
+  version: "18"
+  umbra_planner: false
+  umbra_planner_settings:
+    usedirectio: true
+    multiway: d
+    optimizer.sidewayinformationpassing: false
+  umbra_planner_parameter:
+    version: "26.01"
+systems:
+  - title: Postgres
+    dbms: postgres
+    disabled: false
+  - title: Postgres (Umbra Planner)
+    dbms: postgres
+    disabled: false
+    parameter:
+      umbra_planner: true
+  - title: Postgres (Umbra Planner, no join optimizer)
+    dbms: postgres
+    disabled: false
+    settings:
+      join_collapse_limit: 1
+      from_collapse_limit: 1
+    parameter:
+      umbra_planner: true
+benchmarks:
+  - name: tpch
+    scale: 100
+  - name: tpcds
+    scale: 100
+  - name: ssb
+    scale: 100
+  - name: job

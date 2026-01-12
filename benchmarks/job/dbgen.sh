@@ -7,7 +7,7 @@ mkdir -p data
 cd data
 
 # Reuse existing datasets
-if [ -z "$(ls -A "job")" ]; then
+if [ ! -d "job" ]; then
   (
     mkdir job
     cd job

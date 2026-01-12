@@ -5,11 +5,11 @@ SKEW=${2:-2}
 
 echo "Generating Skewed TPC-H database with scale factor $SF and zipfian skew $SKEW"
 
-mkdir -p "data/tpch/sf${SF}skew${SKEW}"
-cd "data/tpch/"
+mkdir -p data/tpch/
+cd data/tpch/
 
 # Reuse existing datasets
-if [ -z "$(ls -A "sf${SF}skew${SKEW}")" ]; then
+if [ ! -d "../sf${SF}skew${SKEW}" ]; then
   (
     # Originally from: https://download.microsoft.com/download/6/A/A/6AA77214-3402-457E-938A-E7A1C737639A/TPCDSkew.zip
     echo '99ee2268fabc690cf74684deb2f8559c  TPCDSkew.zip' | md5sum --check --status 2>/dev/null || curl -OL https://db.in.tum.de/~fent/dbgen/tpch/TPCDSkew.zip
@@ -33,6 +33,7 @@ if [ -z "$(ls -A "sf${SF}skew${SKEW}")" ]; then
 #endif /* LINUX */' >>config.h
     make -sj "$(nproc)" dbgen 2>/dev/null
     ./dbgen -f -s "$SF" -z "$SKEW"
+    mkdir -p "../sf${SF}skew${SKEW}"
     for table in ./*.tbl; do
       sed 's/|$//' "$table" >"../sf${SF}skew${SKEW}/$table"
       rm "$table"

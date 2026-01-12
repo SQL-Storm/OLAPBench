@@ -16,6 +16,7 @@ class SQLServer(DBMS):
         super().__init__(benchmark, db_dir, data_dir, params, settings)
 
         self.force_order = params.get("force_order", False)
+        self.connection = None
 
     @property
     def name(self) -> str:
@@ -23,7 +24,7 @@ class SQLServer(DBMS):
 
     @property
     def docker_image_name(self) -> str:
-        return 'mcr.microsoft.com/mssql/server:2022-latest'
+        return f'mcr.microsoft.com/mssql/server:{self._version}'
 
     def connection_string(self) -> str:
         return f"iusql \"{self._connection_string}\" -v"
@@ -56,35 +57,40 @@ class SQLServer(DBMS):
         # prepare database directories
         self.host_dir = tempfile.TemporaryDirectory(dir=self._db_dir)
 
-        # start Docker container
-        sqlserver_environment = {
-            "ACCEPT_EULA": "Y",
-            "SA_PASSWORD": "Password_0",
-            "MSSQL_COLLATION": "Latin1_General_100_BIN2_UTF8",
-        }
-        docker_params = {
-            "shm_size": "%d" % self._buffer_size,
-        }
-        self._host_port = self._host_port if self._host_port is not None else 14331
-        self._start_container(sqlserver_environment, 1433, self._host_port, self.host_dir.name, "/var/opt/mssql", docker_params=docker_params)
-        self._connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER=localhost,{self._host_port};UID=sa;TrustServerCertificate=yes;PWD=Password_0")
+        try:
+            # start Docker container
+            sqlserver_environment = {
+                "ACCEPT_EULA": "Y",
+                "SA_PASSWORD": "Password_0",
+                "MSSQL_COLLATION": "Latin1_General_100_BIN2_UTF8",
+            }
+            docker_params = {
+                "shm_size": "%d" % self._buffer_size,
+            }
+            self._host_port = self._host_port if self._host_port is not None else 14331
+            self._start_container(sqlserver_environment, 1433, self._host_port, self.host_dir.name, "/var/opt/mssql", docker_params=docker_params)
+            self._connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER=localhost,{self._host_port};UID=sa;TrustServerCertificate=yes;PWD=Password_0")
 
-        # configure SQL server
-        with self.connection.cursor() as cursor:
-            cursor.execute("EXEC sp_configure 'show advanced options', '1'")
-            cursor.execute("RECONFIGURE WITH OVERRIDE")
-            cursor.execute("EXEC sp_configure 'max server memory', %d" % (self._buffer_size // 1024))
-            cursor.execute("EXEC sp_configure 'max degree of parallelism', '%d'" % self._worker_threads)
-            cursor.execute("EXEC sp_configure 'default trace enabled', 0")
-            cursor.execute("RECONFIGURE WITH OVERRIDE")
-            cursor.execute("SET STATISTICS TIME ON;")
+            # configure SQL server
+            with self.connection.cursor() as cursor:
+                cursor.execute("EXEC sp_configure 'show advanced options', '1'")
+                cursor.execute("RECONFIGURE WITH OVERRIDE")
+                cursor.execute("EXEC sp_configure 'max server memory', %d" % (self._buffer_size // 1024))
+                cursor.execute("EXEC sp_configure 'max degree of parallelism', '%d'" % self._worker_threads)
+                cursor.execute("EXEC sp_configure 'default trace enabled', 0")
+                cursor.execute("RECONFIGURE WITH OVERRIDE")
+                cursor.execute("SET STATISTICS TIME ON;")
 
-        logger.log_verbose_dbms(f"Prepared sqlserver database", self)
+            logger.log_verbose_dbms(f"Prepared sqlserver database", self)
 
-        return self
+            return self
+        except Exception as e:
+            self.__exit__(None, None, None)
+            raise e
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.connection.close()
+        if self.connection is not None:
+            self.connection.close()
         self._kill_container()
         self.host_dir.cleanup()
 

@@ -1,0 +1,43 @@
+title: ClickHouse
+repetitions: 5
+warmup: 3
+timeout: 60
+global_timeout: 0
+fetch_result: true
+output: results/querypotter/clickhouse/
+query_plan:
+  retrieve: true
+  system_representation: true
+parameter:
+  version: "25.11"
+  umbra_planner: false
+  umbra_planner_settings:
+    usedirectio: true
+    multiway: d
+    optimizer.sidewayinformationpassing: false
+  umbra_planner_parameter:
+    version: "26.01"
+systems:
+  - title: ClickHouse
+    dbms: clickhouse
+    disabled: false
+  - title: ClickHouse (Umbra Planner)
+    dbms: clickhouse
+    disabled: false
+    parameter:
+      umbra_planner: true
+  - title: ClickHouse (Umbra Planner, no join optimizer)
+    dbms: clickhouse
+    disabled: false
+    settings:
+      query_plan_optimize_join_order_limit: 1
+    parameter:
+      umbra_planner: true
+benchmarks:
+  - name: tpch
+    scale: 100
+  - name: tpcds
+    scale: 100
+  - name: ssb
+    scale: 100
+  - name: job

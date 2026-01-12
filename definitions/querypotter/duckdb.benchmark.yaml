@@ -1,0 +1,43 @@
+title: DuckDB
+repetitions: 5
+warmup: 3
+timeout: 60
+global_timeout: 0
+fetch_result: true
+query_plan:
+  retrieve: true
+  system_representation: true
+output: results/querypotter/duckdb/
+parameter:
+  version: "1.4.3"
+  umbra_planner: false
+  umbra_planner_settings:
+    usedirectio: true
+    multiway: d
+    optimizer.sidewayinformationpassing: false
+  umbra_planner_parameter:
+    version: "26.01"
+systems:
+  - title: DuckDB
+    dbms: duckdb
+    disabled: false
+  - title: DuckDB (Umbra Planner)
+    dbms: duckdb
+    disabled: false
+    parameter:
+      umbra_planner: true
+  - title: DuckDB (Umbra Planner, no join optimizer)
+    dbms: duckdb
+    disabled: false
+    settings:
+      disabled_optimizers: "join_order,build_side_probe_side"
+    parameter:
+      umbra_planner: true
+benchmarks:
+  - name: tpch
+    scale: 100
+  - name: tpcds
+    scale: 100
+  - name: ssb
+    scale: 100
+  - name: job

@@ -188,6 +188,8 @@ class Postgres(DBMS):
 
     def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> QueryPlan:
         result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True, timeout=timeout).result
+        if not result or not result[0]:
+            return None
         json_plan = result[0][0][0]
         plan_parser = PostgresParser(include_system_representation=include_system_representation)
         query_plan = plan_parser.parse_json_plan(query, json_plan)

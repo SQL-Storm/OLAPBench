@@ -9,6 +9,7 @@ class DBMSType(int, Enum):
     Postgres = 2
     Hyper = 3
     DuckDB = 4
+    ClickHouse = 5
 
 
 class OperatorType(Enum):
@@ -85,6 +86,16 @@ class TableScan(QueryOperator):
         elif dbms_type == DBMSType.DuckDB:
             table_name = plan["extra_info"]["Table"] if "Table" in plan["extra_info"] else None
             self.table_name = table_name
+        elif dbms_type == DBMSType.ClickHouse:
+            storage = plan.get("Storage") or plan.get("storage") or {}
+            if isinstance(storage, dict):
+                table_name = storage.get("Table")
+            if not self.table_name:
+                self.table_name = plan.get("Table")
+            if not self.table_name and isinstance(plan, dict):
+                description = plan.get("Description") or plan.get("description")
+                if isinstance(description, str) and description.strip():
+                    self.table_name = description.strip().removeprefix("clickhouse.")
 
 
 class InlineTable(QueryOperator):
@@ -139,6 +150,18 @@ class Sort(QueryOperator):
             self.limit = plan.get("limit")
         elif dbms_type == DBMSType.DuckDB:
             self.limit = plan["extra_info"]["Top"] if "Top" in plan["extra_info"] else None
+        elif dbms_type == DBMSType.ClickHouse:
+            limit_val = plan.get("Limit") or plan.get("limit") or plan.get("rows_limit") or plan.get("RowsRead")
+            try:
+                self.limit = int(limit_val) if limit_val is not None else None
+            except Exception:
+                self.limit = limit_val
+        elif dbms_type == DBMSType.SQLServer:
+            limit_val = plan.get("limit")
+            try:
+                self.limit = int(limit_val) if limit_val is not None else None
+            except Exception:
+                self.limit = limit_val
 
 
 class GroupBy(QueryOperator):
@@ -158,6 +181,8 @@ class GroupBy(QueryOperator):
             self.method = "hash"
         elif dbms_type == DBMSType.Postgres:
             self.method = plan["Node Type"] if plan["Node Type"] in ["Unique", "Group"] else plan["Strategy"]
+        elif dbms_type == DBMSType.ClickHouse:
+            self.method = plan.get("method") or plan.get("Method")
 
 
 class Join(QueryOperator):
@@ -233,6 +258,36 @@ class Join(QueryOperator):
                 self.method = "hash"
             elif name == "Nested Loop":
                 self.method = "nl"
+        elif dbms_type == DBMSType.ClickHouse:
+            description = str(plan.get("Description", "")).lower()
+            join_type = plan.get("Join", plan.get("join_type", plan.get("Type")))
+            self.type = join_type.lower() if isinstance(join_type, str) else self.type
+            if self.type is None:
+                if "left" in description:
+                    self.type = "leftouter"
+                elif "right" in description:
+                    self.type = "rightouter"
+                elif "full" in description:
+                    self.type = "fullouter"
+                elif "semi" in description:
+                    self.type = "semi"
+                elif "anti" in description:
+                    self.type = "anti"
+                elif "cross" in description:
+                    self.type = "cross"
+                elif "inner" in description:
+                    self.type = "inner"
+                elif description:
+                    self.type = "inner"
+            algorithm = plan.get("Algorithm") or plan.get("algorithm")
+            if isinstance(algorithm, str):
+                algo_lower = algorithm.lower()
+                if "hash" in algo_lower:
+                    self.method = "hash"
+                elif "merge" in algo_lower:
+                    self.method = "merge"
+                elif "nested" in algo_lower or "loop" in algo_lower:
+                    self.method = "nl"
 
 
 class GroupJoin(QueryOperator):

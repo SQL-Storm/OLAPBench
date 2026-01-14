@@ -4,9 +4,12 @@ import tempfile
 import time
 
 import clickhouse_connect
+import simplejson as json
 
 from benchmarks.benchmark import Benchmark
 from dbms.dbms import DBMS, Result, DBMSDescription
+from queryplan.parsers.clickhouseparser import ClickHouseParser
+from queryplan.queryplan import encode_query_plan
 from util import formatter, logger, process, sql
 
 
@@ -198,6 +201,15 @@ class ClickHouse(DBMS):
             result.state = Result.TIMEOUT if is_timeout else Result.ERROR
             result.client_total.append(timeout * 1000 if result.state == Result.TIMEOUT and timeout else client_total)
             return result
+
+    def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0):
+        result = self._execute(query="explain json=1, actions=1 " + query.strip(), fetch_result=True, timeout=timeout).result
+        if not result or not result[0]:
+            logger.log_warn("Could not retrieve query plan")
+        text_plan = result[0][0]
+        json_plan = json.loads(text_plan, allow_nan=True)[0]
+        plan_parser = ClickHouseParser(include_system_representation=include_system_representation)
+        return plan_parser.parse_json_plan(query, json_plan)
 
 
 class ClickHouseDescription(DBMSDescription):

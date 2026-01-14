@@ -1,12 +1,16 @@
+import csv
 import re
 import tempfile
 import threading
 import time
+import traceback
 
 import pyodbc
 
 from benchmarks.benchmark import Benchmark
 from dbms.dbms import DBMS, DBMSDescription, Result
+from queryplan.parsers.sqlserverparser import SQLServerParser
+from queryplan.queryplan import encode_query_plan
 from util import sql, logger
 
 
@@ -69,6 +73,7 @@ class SQLServer(DBMS):
             }
             self._host_port = self._host_port if self._host_port is not None else 14331
             self._start_container(sqlserver_environment, 1433, self._host_port, self.host_dir.name, "/var/opt/mssql", docker_params=docker_params)
+            time.sleep(10)
             self._connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER=localhost,{self._host_port};UID=sa;TrustServerCertificate=yes;PWD=Password_0")
 
             # configure SQL server
@@ -119,7 +124,7 @@ class SQLServer(DBMS):
     def _copy_statements(self, schema: dict) -> list[str]:
         return sql.copy_statements_sqlserver(schema)
 
-    def _execute(self, query: str, fetch_result: bool, timeout: int = 0, fetch_result_limit: int = 0) -> Result:
+    def _execute(self, query: str, fetch_result: bool, timeout: int = 0, fetch_result_limit: int = 0, nextset: bool = False) -> Result:
         result = Result()
 
         if self.force_order:
@@ -128,7 +133,7 @@ class SQLServer(DBMS):
             is_select = query.upper().startswith("SELECT ") or query.upper().startswith("WITH ")
             if not query.endswith("OPTION (FORCE ORDER)") and is_select:
                 query += " OPTION (FORCE ORDER)"
-            
+
         cursor = self.connection.cursor()
 
         timer = None
@@ -145,6 +150,9 @@ class SQLServer(DBMS):
 
             result.rows = cursor.rowcount
             if fetch_result:
+                if nextset:
+                    cursor.nextset()
+
                 # Extract column names from cursor description
                 if cursor.description:
                     result.columns = [desc[0] for desc in cursor.description]
@@ -222,6 +230,31 @@ class SQLServer(DBMS):
         cursor.close()
 
         return result
+
+    def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0):
+        try:
+            self._execute("SET STATISTICS PROFILE ON;", fetch_result=False, timeout=timeout)
+            res = self._execute(query, fetch_result=True, timeout=timeout, nextset=True)
+            self._execute("SET STATISTICS PROFILE OFF;", fetch_result=False, timeout=timeout)
+
+            if not res.result:
+                return None
+
+            plan_rows = [list(r) for r in res.result]
+            parser = SQLServerParser(include_system_representation=include_system_representation)
+            qp = parser.parse_json_plan(query, plan_rows)
+            with open("plans.json", "a") as plan_file:
+                plan_file.write(encode_query_plan(qp, "json"))
+                plan_file.write("\n")
+            return qp
+        except Exception as e:
+            try:
+                self._execute("SET STATISTICS PROFILE OFF;")
+            except Exception:
+                pass
+            print(traceback.format_exc())
+            logger.log_error_verbose(f"Failed to retrieve SQL Server plan: {e}")
+            return None
 
     def load_database(self):
         super().load_database()

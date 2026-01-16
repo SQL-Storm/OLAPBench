@@ -153,17 +153,20 @@ class ClickHouse(DBMS):
         result = Result()
         # Prepare per-query settings
         settings = {}
-        settings.update(self._settings if self._settings else {})
         settings['allow_experimental_join_condition'] = 1
         settings['allow_experimental_analyzer'] = 1
+        settings['aggregate_functions_null_for_empty'] = 1
+        settings['union_default_mode'] = 'DISTINCT'
+        settings['data_type_default_nullable'] = 1
         if timeout and timeout > 0:
             settings['max_execution_time'] = timeout
+        settings.update(self._settings if self._settings else {})
 
         begin = time.time()
         try:
             summary = None
             if fetch_result:
-                qres = self._client.query(query, settings=settings)
+                qres = self._client.query(query.strip(), settings=settings)
                 # Convert tuples to lists for consistency with existing interface
                 client_total = (time.time() - begin) * 1000.0
 
@@ -179,7 +182,7 @@ class ClickHouse(DBMS):
                 # Obtain server-side elapsed if available
                 summary = qres.summary
             else:
-                cres = self._client.command(query, settings=settings)
+                cres = self._client.command(query.strip(), settings=settings)
                 client_total = (time.time() - begin) * 1000.0
 
                 summary = cres.summary

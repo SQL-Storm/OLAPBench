@@ -55,7 +55,7 @@ with cross_items as
                    , date_dim
                 where ws_sold_date_sk = d_date_sk
                   and d_year between 1998 and 1998 + 2) x)
-select channel, i_brand_id, i_class_id, i_category_id, sum(sales), sum(number_sales)
+select top 100 channel, i_brand_id, i_class_id, i_category_id, sum(sales), sum(number_sales)
 from (select 'store'                          channel
            , i_brand_id
            , i_class_id
@@ -98,4 +98,4 @@ from (select 'store'                          channel
       having sum(ws_quantity * ws_list_price) > (select average_sales from avg_sales)) y
 group by rollup (channel, i_brand_id, i_class_id, i_category_id)
 order by channel, i_brand_id, i_class_id, i_category_id
-limit 100;
+;

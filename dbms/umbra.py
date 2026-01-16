@@ -160,13 +160,14 @@ class Umbra(Postgres):
 
     def plan_query(self, query: str, database: str) -> str:
         dialects = {
+            "postgres": "postgresql",
             "sqlserver": "sqlserver",
             "apollo": "sqlserver",
             "clickhouse": "clickhouse",
             "duckdb": "duckdb",
             "singlestore": "mysql",
         }
-        dialect = "postgresql" if database not in dialects else dialects[database]
+        dialect = "umbra" if database not in dialects else dialects[database]
         res = self._execute(f"explain (sql, dialect {dialect}) {query}", True)
         if res.state != Result.SUCCESS:
             return None

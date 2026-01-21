@@ -23,12 +23,12 @@ systems:
     disabled: false
   - title: Apollo (Umbra Planner)
     dbms: apollo
-    disabled: true
+    disabled: false
     parameter:
       umbra_planner: true
   - title: Apollo (Umbra Planner, no join optimizer)
     dbms: apollo
-    disabled: true
+    disabled: false
     parameter:
       umbra_planner: true
       force_order: true

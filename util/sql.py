@@ -140,7 +140,7 @@ def copy_statements_sqlserver(schema: dict) -> [str]:
             continue
         statements.append(f'bulk insert {table["name"]} '
                           f'from \'/data/{table["file"]}\' '
-                          f'with (CODEPAGE = \'RAW\', format = \'CSV\', fieldterminator = \'{delimiter}\', rowterminator = \'\\n\', firstrow={header}, fieldquote = \'"\'); ')
+                          f'with (CODEPAGE = \'RAW\', format = \'CSV\', fieldterminator = \'{delimiter}\', rowterminator = \'\\n\', firstrow={header}, fieldquote = \'"\', TABLOCK); ')
 
     return statements
 

@@ -56,6 +56,7 @@ class Result:
 
         # Update the additional information
         self.extra = other.extra if not self.extra else self.extra
+        self.columns = other.columns if not self.columns else self.columns
         self.result = other.result if not self.result else self.result
         self.message = other.message or self.message
         self.plan = other.plan or self.plan

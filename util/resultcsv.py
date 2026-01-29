@@ -31,7 +31,7 @@ class ResultCSV:
             self.fieldnames.append(metric + "_mean")
             self.fieldnames.append(metric + "_median")
 
-        self.fieldnames.extend(["rows", "message", "extra", "result", "plan"])
+        self.fieldnames.extend(["rows", "message", "extra", "columns", "result", "plan"])
 
     def __enter__(self):
         if os.path.exists(self.filename) and self.append:
@@ -64,6 +64,7 @@ class ResultCSV:
             "rows": result.rows,
             "message": result.message.replace("\n", " "),
             "extra": json.dumps(result.extra, allow_nan=True),
+            "columns": "" if result.columns is None else json.dumps(result.columns),
             "result": "" if result.result is None else json.dumps(result.result, use_decimal=True, default=sql_encoder, allow_nan=True),
             "plan":  "" if result.plan is None else encode_query_plan(result.plan),
         }

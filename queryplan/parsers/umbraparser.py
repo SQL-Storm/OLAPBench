@@ -81,6 +81,10 @@ class UmbraParser(PlanParser):
                 # Set estimated cardinality of the table scan to 0, we do not execute this operation
                 if json_plan["physicalOperator"] == "indexnljoin":
                     children[1].estimated_cardinality = 0
+            elif "build0" in json_plan and "build1" in json_plan and "probe" in json_plan:
+                children.append(self.build_initial_plan(json_plan["build0"]))
+                children.append(self.build_initial_plan(json_plan["build1"]))
+                children.append(self.build_initial_plan(json_plan["probe"]))
             elif "arguments" in json_plan:
                 # Set operator with multiple children
                 for item in json_plan["arguments"]:
@@ -143,6 +147,8 @@ class UmbraParser(PlanParser):
                 return RegexSplit(operator_id)
             case "generateseries":
                 return CustomOperator("GenerateSeries", operator_id)
+            case "ternaryjoin":
+                return Join(operator_id)
             case other:
                 raise ValueError(f"{other} is not a recognized UMBRA operator")
 

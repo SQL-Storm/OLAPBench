@@ -466,7 +466,7 @@ Endpoints:
     parser.add_argument('-j', '--json', required=True, help='YAML configuration file')
     parser.add_argument('--db-dir', default=os.path.join(workdir, 'db'), help='Database directory (default: ./db)')
     parser.add_argument('--data-dir', default=os.path.join(workdir, 'data'), help='Data directory (default: ./data)')
-    parser.add_argument('--base-port', type=int, default=54320, help='Starting port for DBMS allocation (default: 54320)')
+    parser.add_argument('--base-port', type=int, default=55000, help='Starting port for DBMS allocation (default: 54320)')
     parser.add_argument('--port', type=int, default=5000, help='HTTP server port (default: 5000)')
     parser.add_argument('--host', default='0.0.0.0', help='HTTP server host (default: 0.0.0.0)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging')

@@ -12,3 +12,6 @@ source .venv/bin/activate
 pip3 install -r requirements.txt --upgrade
 
 popd
+
+# Keep the virtual environment active
+exec "$SHELL"

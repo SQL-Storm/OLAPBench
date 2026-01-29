@@ -218,7 +218,7 @@ class Join(QueryOperator):
 
     def fill(self, plan, dbms_type: DBMSType):
         if dbms_type == DBMSType.Umbra:
-            self.type = plan["type"]
+            self.type = plan.get("type", "inner")
             op = plan["physicalOperator"]
             if op == "hashjoin":
                 self.method = "hash"
@@ -226,6 +226,8 @@ class Join(QueryOperator):
                 self.method = "index"
             elif op == "bnljoin":
                 self.method = "nl"
+            elif op == "ternaryhashjoin":
+                self.method = "ternaryhash"
             else:
                 self.method = op.replace("join", "")
         elif dbms_type == DBMSType.DuckDB:
@@ -406,6 +408,8 @@ class CustomOperator(QueryOperator):
         self.limit = None
 
     def fill(self, plan, dbms_type: DBMSType):
+        if dbms_type == DBMSType.Umbra and self.name == "TernaryJoin":
+            print(plan)
         if dbms_type == DBMSType.ClickHouse and self.name == "Limit":
             limit_val = plan.get("Limit") or plan.get("limit") or plan.get("rows_limit") or plan.get("RowsRead")
             try:

@@ -49,6 +49,10 @@ def log_error_verbose(info: Any):
         log_group(str(info).strip(), "error", "red")
 
 
+def log_info(info: Any):
+    log_group(info, "info", "green")
+
+
 def log_warn(info: Any):
     log_group(info, "warning", "bright_green")
 

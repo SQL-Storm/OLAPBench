@@ -1,0 +1,46 @@
+title: Validate
+repetitions: 1
+warmup: 0
+timeout: 60
+global_timeout: 0
+fetch_result: true
+output: results/validate/
+systems:
+  - title: Umbra 1
+    dbms: umbra
+    disabled: false
+    parameter:
+      version: "26.01"
+  - title: Umbra 2
+    dbms: umbra
+    disabled: false
+    parameter:
+      version: "26.01"
+  - title: DuckDB 1
+    dbms: duckdb
+    disabled: false
+    parameter:
+      version: "1.4.3"
+  - title: DuckDB 2
+    dbms: duckdb
+    disabled: false
+    parameter:
+      version: "1.4.3"
+  - title: Postgres 1
+    dbms: postgres
+    disabled: false
+    parameter:
+      version: "18"
+  - title: Postgres 2
+    dbms: postgres
+    disabled: false
+    parameter:
+      version: "18"
+benchmarks:
+  - name: tpch
+    scale: 1
+  - name: tpcds
+    scale: 1
+  - name: ssb
+    scale: 1
+  - name: job

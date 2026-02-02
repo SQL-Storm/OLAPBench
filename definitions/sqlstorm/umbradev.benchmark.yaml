@@ -1,0 +1,15 @@
+title: SQLStorm
+repetitions: 1
+warmup: 0
+timeout: 100
+query_seed: 42
+fetch_result: false
+output: results/sqlstorm/umbradev/
+systems:
+  - title: Umbra
+    dbms: umbradev
+    disabled: false
+    settings:
+      multiway: d
+    parameter:
+      version: "26.02"

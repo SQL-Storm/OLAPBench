@@ -155,9 +155,16 @@ class ClickHouse(DBMS):
         settings = {}
         settings['allow_experimental_join_condition'] = 1
         settings['allow_experimental_analyzer'] = 1
+        settings['use_query_cache'] = 0
+        settings['use_query_condition_cache'] = 0
+        
         settings['aggregate_functions_null_for_empty'] = 1
         settings['union_default_mode'] = 'DISTINCT'
         settings['data_type_default_nullable'] = 1
+        settings['join_use_nulls'] = 1
+        settings['group_by_use_nulls'] = 1
+        settings['prefer_column_name_to_alias'] = 1
+        settings['cast_keep_nullable'] = 1
         if timeout and timeout > 0:
             settings['max_execution_time'] = timeout
         settings.update(self._settings if self._settings else {})

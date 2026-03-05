@@ -20,6 +20,8 @@ systems:
   - title: ClickHouse
     dbms: clickhouse
     disabled: false
+    parameter:
+      version: "25.11"
 
   - title: ClickHouse (no join optimizer)
     dbms: clickhouse

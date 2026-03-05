@@ -101,6 +101,8 @@ def main():
     log.info(f"Loading the data from {input_csv} ...")
     valid_count = 0
     invalid_count = 0
+    per_system_valid = {}
+    per_system_invalid = {}
     with log.progress(f"Loading the data", total=len(queries)) as progress:
         with smart_open(input_csv, newline='', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
@@ -129,15 +131,26 @@ def main():
                         log.warn(f"Query {query} has different results (computed by {systems[0]}{", " + str(systems[1:]) + " also had a different result" if len(systems) > 1 else ""}).", row["title"])
                         log.warn(locate_difference(r.result, result, r.dbms, dbms, ignore_decimal_points=ignore_decimal_points, ignore_microseconds=ignore_microseconds, columns=row["columns"]), row["title"])
                         invalid_count += 1
+                        per_system_invalid[row["title"]] = per_system_invalid.get(row["title"], 0) + 1
                     else:
                         log.info_verbose(f"Query {query} has the same results.", row["title"])
                         valid_count += 1
+                        per_system_valid[row["title"]] = per_system_valid.get(row["title"], 0) + 1
 
                 progress.advance()
 
     log.newline()
     log.info(f"Queries with equal result: {valid_count}")
     log.info(f"Queries with different result: {invalid_count}")
+
+    all_titles = sorted(per_system_valid.keys() | per_system_invalid.keys())
+    if all_titles:
+        log.newline()
+        log.info("Per-system summary:")
+        for title in all_titles:
+            equal = per_system_valid.get(title, 0)
+            different = per_system_invalid.get(title, 0)
+            log.info(f"  {title}: {equal} equal, {different} different")
 
 
 if __name__ == "__main__":

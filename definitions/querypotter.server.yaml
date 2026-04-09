@@ -5,7 +5,9 @@ systems:
     disabled: false
     parameter:
       version: "26.01"
-    settings: {}
+    settings: 
+      optimizer.sidewayinformationpassing: false
+      multiway: d
 
   - title: DuckDB
     dbms: duckdb
@@ -26,5 +28,35 @@ systems:
   - title: ClickHouse (no join optimizer)
     dbms: clickhouse
     disabled: false
+    parameter:
+      version: "25.11"
     settings:
       query_plan_optimize_join_order_limit: 1
+
+  - title: SQLServer
+    dbms: sqlserver
+    disabled: false
+    parameter:
+      version: "2025-latest"
+
+  - title: SQLServer (no join optimizer)
+    dbms: sqlserver
+    disabled: false
+    parameter:
+      version: "2025-latest"
+      force_order: true
+
+  - title: Postgres
+    dbms: postgres
+    disabled: false
+    parameter:
+      version: "18"
+
+  - title: Postgres (no join optimizer)
+    dbms: postgres
+    disabled: false
+    settings:
+      join_collapse_limit: 1
+      from_collapse_limit: 1
+    parameter:
+      version: "18"

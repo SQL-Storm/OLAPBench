@@ -334,7 +334,16 @@ def main():
         _print_config(config)
 
         while True:
-            line = input("sql> ").strip()
+            try:
+                line = input("sql> ")
+            except KeyboardInterrupt:
+                print()
+                continue
+            except EOFError:
+                print()
+                break
+
+            line = line.strip()
             if not line:
                 continue
 
@@ -408,8 +417,24 @@ def main():
                 continue
 
             sql_lines = [line]
+            eof_requested = False
             while not sql_lines[-1].rstrip().endswith(";"):
-                sql_lines.append(input("... "))
+                try:
+                    sql_lines.append(input("... "))
+                except KeyboardInterrupt:
+                    print()
+                    sql_lines = []
+                    break
+                except EOFError:
+                    print()
+                    eof_requested = True
+                    break
+
+            if eof_requested:
+                break
+            if not sql_lines:
+                continue
+
             query_text = "\n".join(sql_lines)
 
             try:

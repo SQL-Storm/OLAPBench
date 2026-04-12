@@ -173,14 +173,14 @@ def benchmarks() -> dict[str, BenchmarkDescription]:
     return {benchmark.get_name(): benchmark for benchmark in benchmark_list}
 
 
-def benchmark_arguments(parser: argparse.ArgumentParser):
+def benchmark_arguments(parser: argparse.ArgumentParser, required: bool = True):
     benchmark_map = benchmarks()
 
-    benchmark_parsers = parser.add_subparsers(dest="benchmark", required=True)
+    benchmark_parsers = parser.add_subparsers(dest="benchmark", required=required)
     for name, benchmark in benchmark_map.items():
         benchmark_parser = benchmark_parsers.add_parser(name, help=benchmark.get_description())
         benchmark.add_arguments(benchmark_parser)
 
-    benchmark_parsers.add_parser("default", help="use the default benchmarks")
+    benchmark_parsers.add_parser("default", help="use the benchmark from the config file")
 
     return benchmark_map

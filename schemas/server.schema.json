@@ -114,10 +114,6 @@
   },
   "type": "object",
   "properties": {
-    "benchmark": {
-      "$ref": "#/definitions/benchmark",
-      "description": "Benchmark configuration (optional if specified on command line)"
-    },
     "optimizer": {
       "type": "string",
       "description": "Name of the Umbra/UmbraDev instance to use for query optimization (optional, defaults to first umbra/umbradev instance)"
@@ -128,9 +124,33 @@
         "$ref": "#/definitions/system"
       },
       "minItems": 1,
-      "description": "List of DBMS systems to start and manage"
+      "description": "List of DBMS systems to start (shared across all datasets)"
+    },
+    "benchmark": {
+      "$ref": "#/definitions/benchmark",
+      "description": "Single benchmark/dataset (legacy, use 'datasets' for multiple)"
+    },
+    "datasets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/benchmark"
+      },
+      "minItems": 1,
+      "description": "List of benchmarks to load. Each system is started once per dataset (cross-product)."
     }
   },
   "required": ["systems"],
+  "oneOf": [
+    {
+      "description": "Single dataset",
+      "required": ["benchmark"],
+      "not": { "required": ["datasets"] }
+    },
+    {
+      "description": "Multiple datasets",
+      "required": ["datasets"],
+      "not": { "required": ["benchmark"] }
+    }
+  ],
   "additionalProperties": false
 }

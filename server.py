@@ -14,8 +14,6 @@ import sys
 import threading
 from typing import Dict, Optional
 
-import simplejson as json
-from benchmark import System
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -33,22 +31,22 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Global state
-active_dbms: Dict[str, DBMS] = {}
-dbms_locks: Dict[str, threading.Lock] = {}  # Per-DBMS locks for query serialization
-benchmark_instance: Optional[Benchmark] = None
-optimizer_dbms_name: Optional[str] = None  # Name of Umbra/UmbraDev instance for optimization
-dbms_lock = threading.Lock()  # Lock for modifying active_dbms/dbms_locks dictionaries
+active_dbms: Dict[tuple[str, str], DBMS] = {}  # (dataset_name, title) -> DBMS
+dbms_locks: Dict[tuple[str, str], threading.Lock] = {}  # (dataset_name, title) -> Lock
+benchmark_instances: Dict[str, Benchmark] = {}  # dataset_name -> Benchmark
+optimizer_dbms_name: Dict[str, Optional[str]] = {}  # dataset_name -> optimizer title
+dbms_lock = threading.Lock()  # Lock for modifying the above dicts
 
 
 def cleanup_dbms():
     """Clean up all active DBMS instances on shutdown."""
     with dbms_lock:
-        for name, dbms in active_dbms.items():
+        for (dataset_name, title), dbms in active_dbms.items():
             try:
-                logger.log_driver(f"Shutting down {name}...")
+                logger.log_driver(f"Shutting down {dataset_name}/{title}...")
                 dbms.__exit__(None, None, None)
             except Exception as e:
-                logger.log_error(f"Error shutting down {name}: {e}")
+                logger.log_error(f"Error shutting down {dataset_name}/{title}: {e}")
         active_dbms.clear()
         dbms_locks.clear()
 
@@ -61,21 +59,52 @@ def error(message: str, status_code: int = 404):
     }), status_code
 
 
+def resolve_dataset(dataset_name: Optional[str]):
+    """
+    Resolve a dataset name to a benchmark instance.
+    If dataset_name is None and only one dataset is loaded, returns that dataset's name.
+    Returns (name, error_response) — error_response is None on success.
+    """
+    if dataset_name:
+        if dataset_name not in benchmark_instances:
+            return None, error(
+                f'Dataset "{dataset_name}" not found. Available: {list(benchmark_instances.keys())}', 404
+            )
+        return dataset_name, None
+
+    if len(benchmark_instances) == 1:
+        return next(iter(benchmark_instances)), None
+
+    if len(benchmark_instances) == 0:
+        return None, error('No datasets loaded', 404)
+
+    return None, error(
+        f'Multiple datasets loaded, "dataset" field is required. Available: {list(benchmark_instances.keys())}', 400
+    )
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint."""
     with dbms_lock:
+        benchmarks = []
+        for dataset_name, bench in benchmark_instances.items():
+            benchmarks.append({
+                'name': bench.name,
+                'fullname': bench.fullname,
+                'systems': [{'title': title, 'name': dbms.name} for (d, title), dbms in active_dbms.items() if d == dataset_name],
+                'optimizer': optimizer_dbms_name.get(dataset_name),
+            })
+
         return jsonify({
             'status': 'ok',
-            'active_dbms': [{'title': title, 'name': dbms.name} for title, dbms in active_dbms.items()],
-            'benchmark': benchmark_instance.fullname if benchmark_instance else None,
-            'optimizer': optimizer_dbms_name,
+            'benchmarks': benchmarks,
             'endpoints': {
                 'health': 'GET /health',
-                'dataset': 'GET /dataset',
+                'dataset': 'POST /dataset',
                 'query': 'POST /query',
                 'plan': 'POST /plan',
-                'optimize': 'POST /optimize' if optimizer_dbms_name else None
+                'optimize': 'POST /optimize'
             }
         })
 
@@ -87,22 +116,23 @@ def execute_query():
 
     Request JSON:
     {
-        "dbms": "duckdb",           # Required: name of DBMS to execute on
-        "query": "SELECT ...",       # Required: SQL query to execute
-        "timeout": 5,              # Optional: query timeout in seconds (default: 5)
-        "fetch_result": true,        # Optional: fetch result rows (default: true)
-        "fetch_result_limit": 1000   # Optional: limit result rows (default: 1000)
+        "dataset": "tpch",           # Optional if only one dataset is loaded
+        "dbms": "duckdb",            # Required: name of DBMS to execute on
+        "query": "SELECT ...",        # Required: SQL query to execute
+        "timeout": 5,               # Optional: query timeout in seconds (default: 5)
+        "fetch_result": true,         # Optional: fetch result rows (default: true)
+        "fetch_result_limit": 1000    # Optional: limit result rows (default: 1000)
     }
 
     Response JSON:
     {
         "status": "success" | "error" | "timeout" | "fatal" | "oom",
-        "runtime_ms": 123.45,        # Client-side total time in milliseconds
-        "server_time_ms": 120.5,     # Server-side execution time (if available)
-        "rows": 42,                  # Number of rows (if fetch_result=true)
-        "columns": ["col1", "col2"], # Column names (if fetch_result=true)
-        "result": [[...], ...],      # Result rows (if fetch_result=true)
-        "error": "error message"     # Error message (if status != success)
+        "runtime_ms": 123.45,         # Client-side total time in milliseconds
+        "server_time_ms": 120.5,      # Server-side execution time (if available)
+        "rows": 42,                   # Number of rows (if fetch_result=true)
+        "columns": ["col1", "col2"],  # Column names (if fetch_result=true)
+        "result": [[...], ...],       # Result rows (if fetch_result=true)
+        "error": "error message"      # Error message (if status != success)
     }
     """
     data = request.get_json()
@@ -118,23 +148,28 @@ def execute_query():
     if not query:
         return error('Missing required field: query', 400)
 
+    dataset_name, err = resolve_dataset(data.get('dataset'))
+    if err:
+        return err
+
     timeout = data.get('timeout', 5)
     fetch_result = data.get('fetch_result', True)
     fetch_result_limit = data.get('fetch_result_limit', 1000)
 
     # Get DBMS instance and its lock
     with dbms_lock:
-        if dbms_name not in active_dbms:
-            return error(f'DBMS "{dbms_name}" is not active. Available: {list(active_dbms.keys())}', 404)
+        key = (dataset_name, dbms_name)
+        if key not in active_dbms:
+            available = [t for (d, t) in active_dbms if d == dataset_name]
+            return error(f'DBMS "{dbms_name}" is not active for dataset "{dataset_name}". Available: {available}', 404)
 
-        dbms = active_dbms[dbms_name]
-        query_lock = dbms_locks[dbms_name]
+        dbms = active_dbms[key]
+        query_lock = dbms_locks[key]
 
     # Serialize queries to the same DBMS
     response = {}
     with query_lock:
         try:
-            # Execute the query
             result = dbms._execute(query, fetch_result=fetch_result, timeout=timeout, fetch_result_limit=fetch_result_limit)
 
             response['status'] = result.state
@@ -152,7 +187,7 @@ def execute_query():
             return jsonify(response)
 
         except Exception as e:
-            logger.log_error(f"Unexpected error executing query on {dbms_name}: {e}")
+            logger.log_error(f"Unexpected error executing query on {dataset_name}/{dbms_name}: {e}")
             response['status'] = Result.FATAL
             response['error'] = str(e)
             response['runtime_ms'] = None
@@ -168,16 +203,17 @@ def get_query_plan():
 
     Request JSON:
     {
-        "dbms": "duckdb",           # Required: name of DBMS to get plan from
-        "query": "SELECT ...",       # Required: SQL query to analyze
-        "timeout": 5               # Optional: timeout in seconds (default: 5)
+        "dataset": "tpch",           # Optional if only one dataset is loaded
+        "dbms": "duckdb",            # Required: name of DBMS to get plan from
+        "query": "SELECT ...",        # Required: SQL query to analyze
+        "timeout": 5                # Optional: timeout in seconds (default: 5)
     }
 
     Response JSON:
     {
         "status": "success" | "error",
-        "query_plan": {...},         # Query plan object (if status=success and supported)
-        "error": "error message"     # Error message (if status=error or not supported)
+        "query_plan": {...},          # Query plan object (if status=success and supported)
+        "error": "error message"      # Error message (if status=error or not supported)
     }
     """
     data = request.get_json()
@@ -194,13 +230,19 @@ def get_query_plan():
     if not query:
         return error('Missing required field: query', 400)
 
+    dataset_name, err = resolve_dataset(data.get('dataset'))
+    if err:
+        return err
+
     # Get DBMS instance and its lock
     with dbms_lock:
-        if dbms_name not in active_dbms:
-            return error(f'DBMS "{dbms_name}" is not active. Available: {list(active_dbms.keys())}', 404)
+        key = (dataset_name, dbms_name)
+        if key not in active_dbms:
+            available = [t for (d, t) in active_dbms if d == dataset_name]
+            return error(f'DBMS "{dbms_name}" is not active for dataset "{dataset_name}". Available: {available}', 404)
 
-        dbms = active_dbms[dbms_name]
-        query_lock = dbms_locks[dbms_name]
+        dbms = active_dbms[key]
+        query_lock = dbms_locks[key]
 
     # Serialize queries to the same DBMS
     response = {}
@@ -217,7 +259,7 @@ def get_query_plan():
             return jsonify(response)
 
         except Exception as e:
-            logger.log_error(f"Error retrieving query plan on {dbms_name}: {e}")
+            logger.log_error(f"Error retrieving query plan on {dataset_name}/{dbms_name}: {e}")
             response['status'] = 'error'
             response['error'] = str(e)
 
@@ -231,8 +273,9 @@ def optimize():
 
     Request JSON:
     {
-        "query": "SELECT ...",       # Required: SQL query to optimize
-        "dbms": "duckdb"             # Required: the dbms to optimize for
+        "dataset": "tpch",           # Optional if only one dataset is loaded
+        "query": "SELECT ...",        # Required: SQL query to optimize
+        "dbms": "duckdb"              # Required: the dbms to optimize for
     }
 
     Response JSON:
@@ -255,20 +298,26 @@ def optimize():
     if not dbms:
         return error('Missing required field: dbms', 400)
 
+    dataset_name, err = resolve_dataset(data.get('dataset'))
+    if err:
+        return err
+
     # Get optimizer DBMS instance
     with dbms_lock:
-        if optimizer_dbms_name is None:
-            return error('No Umbra/UmbraDev instance configured for query optimization', 404)
+        opt_name = optimizer_dbms_name.get(dataset_name)
+        if opt_name is None:
+            return error(f'No Umbra/UmbraDev instance configured for query optimization on dataset "{dataset_name}"', 404)
 
-        if optimizer_dbms_name not in active_dbms:
-            return error(f'Optimizer DBMS "{optimizer_dbms_name}" is not active', 404)
+        opt_key = (dataset_name, opt_name)
+        if opt_key not in active_dbms:
+            return error(f'Optimizer DBMS "{opt_name}" is not active', 404)
 
-        optimizer = active_dbms[optimizer_dbms_name]
-        optimizer_lock = dbms_locks[optimizer_dbms_name]
+        optimizer = active_dbms[opt_key]
+        optimizer_lock = dbms_locks[opt_key]
 
     # Check if optimizer supports plan_query
     if not hasattr(optimizer, 'plan_query'):
-        return error(f'DBMS "{optimizer_dbms_name}" does not support query optimization', 400)
+        return error(f'DBMS "{opt_name}" does not support query optimization', 400)
 
     # Optimize the query
     with optimizer_lock:
@@ -288,20 +337,21 @@ def optimize():
             return error(str(e), 500)
 
 
-@app.route('/dataset', methods=['GET'])
+@app.route('/dataset', methods=['POST'])
 def get_dataset():
     """
-    Get information about the loaded dataset.
+    Get information about a loaded dataset.
+
+    Request JSON:
+    {
+        "dataset": "tpch"    # Optional if only one dataset is loaded
+    }
 
     Response JSON:
     {
         "status": "success",
         "benchmark": "tpch",
-        "schema": {
-            "tables": [...],
-            "delimiter": ",",
-            ...
-        },
+        "schema": "CREATE TABLE ...",
         "queries": [
             {
                 "name": "1.sql",
@@ -313,20 +363,19 @@ def get_dataset():
         ]
     }
     """
-    if benchmark_instance is None:
-        return error('No benchmark loaded', 404)
+    data = request.get_json() or {}
+    dataset_name, err = resolve_dataset(data.get('dataset'))
+    if err:
+        return err
+
+    bench = benchmark_instances[dataset_name]
 
     try:
-        # Get schema (with primary keys, without foreign keys for Umbra compatibility)
-        schema = benchmark_instance.get_schema(primary_key=True, foreign_keys=False)
-
-        # Convert schema dict to SQL CREATE TABLE statements
+        schema = bench.get_schema(primary_key=True, foreign_keys=False)
         schema_sql = '\n\n'.join(sql.create_table_statements(schema, alter_table=False))
 
-        # Get queries and any DB-specific overrides
-        queries_list, query_overrides = benchmark_instance.queries('')
+        queries_list, query_overrides = bench.queries('')
 
-        # Format queries as list of dicts with per-DBMS overrides embedded
         queries = []
         for name, query_sql in queries_list:
             entry = {'name': name, 'sql': query_sql}
@@ -337,51 +386,50 @@ def get_dataset():
 
         return jsonify({
             'status': 'success',
-            'benchmark': benchmark_instance.nice_name,
-            'description': benchmark_instance.description,
+            'benchmark': bench.nice_name,
+            'description': bench.description,
             'schema': schema_sql,
             'queries': queries
         })
 
     except Exception as e:
-        logger.log_error(f"Error retrieving dataset info: {e}")
+        logger.log_error(f"Error retrieving dataset info for {dataset_name}: {e}")
         return error(str(e), 500)
 
 
 def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir: str, base_port: int = 54320, optimizer_name: Optional[str] = None):
     """
-    Initialize and load all specified DBMS instances.
+    Initialize and load all specified DBMS instances for a single benchmark/dataset.
 
     Args:
         benchmark: The benchmark instance
         systems: List of system configurations
         db_dir: Database directory
         data_dir: Data directory
-        base_port: Starting port for DBMS allocation (default: 54320)
+        base_port: Starting port for DBMS allocation
         optimizer_name: Name of Umbra/UmbraDev instance for optimization (optional)
     """
-    global optimizer_dbms_name
+    dataset_name = benchmark.name
     dbms_descriptions = database_systems()
 
-    # Generate data if needed
     logger.log_driver(f"Preparing {benchmark.description}")
     benchmark.dbgen()
 
-    port_offset = 0
+    port_offset = len(active_dbms)
+
     with dbms_lock:
         for system_config in systems:
             title = system_config['title']
             dbms_name = system_config['dbms']
-            params = system_config.get('params', {})
+            params = dict(system_config.get('params', {}))
             settings = system_config.get('settings', {})
 
-            # Allocate unique port for this DBMS
             host_port = base_port + port_offset
             port_offset += 1
             params['host_port'] = host_port
 
             logger.log_header(title)
-            logger.log_driver(f"Starting {title} (dbms: {dbms_name}, params: {params}, settings: {settings})")
+            logger.log_driver(f"Starting {title} (dataset: {dataset_name}, dbms: {dbms_name}, params: {params}, settings: {settings})")
 
             if dbms_name not in dbms_descriptions:
                 logger.log_error(f"Unknown DBMS: {dbms_name}")
@@ -391,15 +439,13 @@ def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir:
                 dbms = dbms_descriptions[dbms_name].instantiate(benchmark, db_dir, data_dir, params, settings)
                 dbms.__enter__()
 
-                # Load the database
                 logger.log_driver(f"Loading database for {title}...")
                 dbms.load_database()
 
-                active_dbms[title] = dbms
-                dbms_locks[title] = threading.Lock()
+                active_dbms[(dataset_name, title)] = dbms
+                dbms_locks[(dataset_name, title)] = threading.Lock()
                 logger.log_driver(f"✓ {title} is ready (port: {host_port})")
 
-                # Log connection string if available
                 conn_str = dbms.connection_string()
                 if conn_str:
                     logger.log_driver(f"  Connection: {conn_str}")
@@ -408,23 +454,23 @@ def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir:
                 logger.log_error(f"Failed to start {title}: {e}")
                 raise
 
-        # Determine optimizer DBMS
+        # Determine optimizer DBMS for this dataset
         if optimizer_name:
-            if optimizer_name not in active_dbms:
-                logger.log_error(f"Specified optimizer '{optimizer_name}' not found in active DBMS")
+            if (dataset_name, optimizer_name) not in active_dbms:
+                logger.log_error(f"Specified optimizer '{optimizer_name}' not found in active DBMS for dataset '{dataset_name}'")
             else:
-                optimizer_dbms_name = optimizer_name
-                logger.log_driver(f"Using {optimizer_dbms_name} for query optimization")
+                optimizer_dbms_name[dataset_name] = optimizer_name
+                logger.log_driver(f"Using {optimizer_name} for query optimization on dataset '{dataset_name}'")
         else:
-            # Find first umbra or umbradev instance
-            for title, dbms in active_dbms.items():
-                if hasattr(dbms, 'plan_query'):
-                    optimizer_dbms_name = title
-                    logger.log_driver(f"Using {optimizer_dbms_name} for query optimization (auto-detected)")
+            for (d, title), dbms in active_dbms.items():
+                if d == dataset_name and hasattr(dbms, 'plan_query'):
+                    optimizer_dbms_name[dataset_name] = title
+                    logger.log_driver(f"Using {title} for query optimization on dataset '{dataset_name}' (auto-detected)")
                     break
 
-            if optimizer_dbms_name is None:
-                logger.log_driver("No Umbra/UmbraDev instance found for query optimization")
+            if dataset_name not in optimizer_dbms_name:
+                optimizer_dbms_name[dataset_name] = None
+                logger.log_driver(f"No Umbra/UmbraDev instance found for query optimization on dataset '{dataset_name}'")
 
 
 def parse_args():
@@ -436,11 +482,11 @@ def parse_args():
 Example:
   ./server.py -j server_config.yaml --port 5000
 
-server_config.yaml format:
+server_config.yaml format (single dataset):
   benchmark:
     name: tpch
     scale: 1
-  
+
   systems:
     - title: DuckDB
       dbms: duckdb
@@ -448,18 +494,25 @@ server_config.yaml format:
         version: latest
       settings:
         max_memory: 8GB
-    
+
+server_config.yaml format (multiple datasets, shared systems):
+  datasets:
+    - name: tpch
+      scale: 1
+    - name: job
+
+  systems:
+    - title: DuckDB
+      dbms: duckdb
     - title: ClickHouse
       dbms: clickhouse
-      params:
-        version: latest
 
 Endpoints:
-  GET  /health       - Server health and status
-  GET  /dataset      - Schema and available queries
-  POST /query        - Execute query on specified DBMS
-  POST /plan         - Get query plan for a query
-  POST /optimize     - Optimize query using Umbra (if configured)
+  GET  /health          - Server health and status
+  POST /dataset         - Schema and queries (add "dataset" field for multiple datasets)
+  POST /query           - Execute query on specified DBMS (add "dataset" field for multiple datasets)
+  POST /plan            - Get query plan for a query
+  POST /optimize        - Optimize query using Umbra (if configured)
 """
     )
 
@@ -471,7 +524,7 @@ Endpoints:
     parser.add_argument('--host', default='0.0.0.0', help='HTTP server host (default: 0.0.0.0)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('-vv', '--very-verbose', action='store_true', help='Enable very verbose logging')
-    benchmark_arguments(parser)
+    benchmark_arguments(parser, required=False)
 
     return parser.parse_args()
 
@@ -481,60 +534,23 @@ def load_config(config_path: str) -> dict:
     return schemajson.load(config_path, "server.schema.json")
 
 
-def main():
-    """Main entry point."""
-    global benchmark_instance
+def _instantiate_benchmark(benchmark_config: dict) -> Benchmark:
+    """Instantiate a Benchmark from a config dict."""
+    benchmark_name = benchmark_config.get('name')
+    if not benchmark_name:
+        raise ValueError("benchmark config must specify 'name'")
 
-    args = parse_args()
+    benchmark_map = benchmarks()
+    if benchmark_name not in benchmark_map:
+        raise ValueError(f"Unknown benchmark: {benchmark_name}. Available: {list(benchmark_map.keys())}")
 
-    # Set up logging
-    logger.set_very_verbose(args.very_verbose)
-    logger.set_verbose(args.verbose)
+    return benchmark_map[benchmark_name].instantiate('./', benchmark_config)
 
-    # Load configuration
-    try:
-        config = load_config(args.json)
-    except Exception as e:
-        logger.log_error(f"Failed to load configuration: {e}")
-        sys.exit(1)
 
-    # Parse benchmark configuration
-    # Command-line benchmark overrides config file
-    if args.benchmark != "default":
-        # Use command-line specified benchmark
-        benchmark_descriptions = benchmarks()
-        if args.benchmark not in benchmark_descriptions:
-            logger.log_error(f"Unknown benchmark: {args.benchmark}. Available: {list(benchmark_descriptions.keys())}")
-            sys.exit(1)
-
-        benchmark_instance = benchmark_descriptions[args.benchmark].instantiate('./', vars(args))
-    else:
-        # Use benchmark from config file
-        benchmark_config = config.get('benchmark', {})
-        benchmark_name = benchmark_config.get('name')
-
-        if not benchmark_name:
-            logger.log_error("Configuration must specify benchmark.name or use command-line benchmark argument")
-            sys.exit(1)
-
-        # Get benchmark arguments
-        bench_args = benchmark_arguments()
-        if benchmark_name not in bench_args:
-            logger.log_error(f"Unknown benchmark: {benchmark_name}. Available: {list(bench_args.keys())}")
-            sys.exit(1)
-
-        # Parse benchmark parameters from config
-        benchmark_params = {}
-        for key, value in benchmark_config.items():
-            if key != 'name':
-                benchmark_params[key] = value
-
-        # Instantiate benchmark
-        benchmark_instance = benchmarks()[benchmark_name]('./', benchmark_params)
-
-    # Parse systems configuration
+def _parse_systems(systems_config: list) -> list[dict]:
+    """Expand system configs (unfold parameter/settings templates)."""
     systems = []
-    for system_config in config.get('systems', []):
+    for system_config in systems_config:
         if system_config.get('disabled', False):
             continue
 
@@ -543,50 +559,95 @@ def main():
 
         for params in unfold(params):
             for settings in unfold(settings):
-                # fill the title
                 template = Template(system_config['title'])
                 title = template.substitute(**settings, **params)
-
                 systems.append({
                     'title': title,
                     'dbms': system_config['dbms'],
                     'params': params,
                     'settings': settings
                 })
+    return systems
 
+
+def main():
+    """Main entry point."""
+    args = parse_args()
+
+    logger.set_very_verbose(args.very_verbose)
+    logger.set_verbose(args.verbose)
+
+    try:
+        config = load_config(args.json)
+    except Exception as e:
+        logger.log_error(f"Failed to load configuration: {e}")
+        sys.exit(1)
+
+    # Shared systems list — same for all datasets
+    systems_config = config.get('systems', [])
+    optimizer_name = config.get('optimizer', None)
+
+    systems = _parse_systems(systems_config)
     if not systems:
         logger.log_error("No systems configured")
         sys.exit(1)
 
-    # Register cleanup
+    # Collect benchmark configs. Priority:
+    #   1. CLI benchmark argument (if not "default" or None)
+    #   2. "datasets" list in config
+    #   3. "benchmark" dict in config (single-dataset legacy)
+    cli_benchmark = getattr(args, 'benchmark', None)
+    if cli_benchmark and cli_benchmark != 'default':
+        cli_args = vars(args)
+        benchmark_configs = [{**cli_args, 'name': cli_benchmark}]
+    elif 'datasets' in config:
+        benchmark_configs = config['datasets']
+    else:
+        benchmark_config = config.get('benchmark', {})
+        if not benchmark_config:
+            logger.log_error("Configuration must specify 'benchmark', 'datasets', or a CLI benchmark argument")
+            sys.exit(1)
+        benchmark_configs = [benchmark_config]
+
     atexit.register(cleanup_dbms)
 
-    # Set up DBMS instances
-    try:
-        optimizer_name = config.get('optimizer', None)
-        setup_dbms(benchmark_instance, systems, args.db_dir, args.data_dir, args.base_port, optimizer_name)
-    except Exception as e:
-        logger.log_error(f"Failed to set up DBMS instances: {e}")
-        cleanup_dbms()
-        sys.exit(1)
+    for benchmark_config in benchmark_configs:
+        try:
+            bench = _instantiate_benchmark(benchmark_config)
+        except Exception as e:
+            logger.log_error(f"Failed to instantiate benchmark: {e}")
+            cleanup_dbms()
+            sys.exit(1)
 
+        benchmark_instances[bench.name] = bench
+
+        try:
+            setup_dbms(bench, systems, args.db_dir, args.data_dir, args.base_port, optimizer_name)
+        except Exception as e:
+            logger.log_error(f"Failed to set up DBMS instances for dataset '{bench.name}': {e}")
+            cleanup_dbms()
+            sys.exit(1)
+
+    _start_server(args)
+
+
+def _start_server(args):
+    """Log startup info and start the Flask server."""
     logger.log_header("Server Ready")
     logger.log_driver(f"HTTP server starting on {args.host}:{args.port}")
-    logger.log_driver(f"Active DBMS: {list(active_dbms.keys())}")
-    logger.log_driver(f"Benchmark: {benchmark_instance.name}")
-    if optimizer_dbms_name:
-        logger.log_driver(f"Query Optimizer: {optimizer_dbms_name}")
+    for dataset_name in benchmark_instances:
+        systems = [title for (d, title) in active_dbms if d == dataset_name]
+        opt = optimizer_dbms_name.get(dataset_name)
+        logger.log_driver(f"  [{dataset_name}] systems: {systems}" + (f", optimizer: {opt}" if opt else ""))
     logger.log_driver("")
     logger.log_driver("Endpoints:")
-    logger.log_driver("  GET  /health - Health check")
-    logger.log_driver("  GET  /dataset - Get schema and queries")
-    logger.log_driver("  POST /query  - Execute query")
-    logger.log_driver("  POST /plan   - Get query plan for a query")
-    if optimizer_dbms_name:
-        logger.log_driver("  POST /optimize - Optimize query using Umbra")
+    logger.log_driver("  GET  /health   - Health check")
+    logger.log_driver("  POST /dataset  - Schema and queries")
+    logger.log_driver("  POST /query    - Execute query")
+    logger.log_driver("  POST /plan     - Get query plan")
+    logger.log_driver("  POST /optimize - Optimize query using Umbra")
     logger.log_driver("")
 
-    # Start Flask server
     try:
         app.run(host=args.host, port=args.port, debug=False, use_reloader=False)
     except KeyboardInterrupt:

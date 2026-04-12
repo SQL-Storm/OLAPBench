@@ -1,4 +1,10 @@
 optimizer: Umbra
+
+datasets:
+  - name: tpch
+    scale: 1
+  - name: job
+
 systems:
   - title: Umbra
     dbms: umbra

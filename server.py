@@ -15,7 +15,7 @@ import threading
 from typing import Dict, Optional
 
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 
 from benchmarks.benchmark import benchmark_arguments, benchmarks, Benchmark
@@ -27,7 +27,9 @@ from util.template import Template, unfold
 workdir = os.getcwd()
 load_dotenv()
 
-app = Flask(__name__)
+FRONTEND_BUILD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend', 'build')
+
+app = Flask(__name__, static_folder=FRONTEND_BUILD_DIR, static_url_path='')
 CORS(app)  # Enable CORS for all routes
 
 # Global state
@@ -81,6 +83,18 @@ def resolve_dataset(dataset_name: Optional[str]):
     return None, error(
         f'Multiple datasets loaded, "dataset" field is required. Available: {list(benchmark_instances.keys())}', 400
     )
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path: str):
+    """Serve the React frontend. Falls back to index.html for client-side routing."""
+    if path and os.path.exists(os.path.join(FRONTEND_BUILD_DIR, path)):
+        return send_from_directory(FRONTEND_BUILD_DIR, path)
+    index = os.path.join(FRONTEND_BUILD_DIR, 'index.html')
+    if os.path.exists(index):
+        return send_file(index)
+    return jsonify({'error': 'Frontend not built. Run: cd frontend && npm install && npm run build'}), 404
 
 
 @app.route('/health', methods=['GET'])
@@ -570,12 +584,30 @@ def _parse_systems(systems_config: list) -> list[dict]:
     return systems
 
 
+def build_frontend():
+    """Build the React frontend if source is present."""
+    import subprocess
+    frontend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend')
+    if not os.path.exists(os.path.join(frontend_dir, 'package.json')):
+        return
+    logger.log_driver("Building frontend...")
+    subprocess.run(['npm', 'install', '--legacy-peer-deps'], cwd=frontend_dir, check=True)
+    subprocess.run(['npm', 'run', 'build'], cwd=frontend_dir, check=True)
+    logger.log_driver("Frontend built.")
+
+
 def main():
     """Main entry point."""
     args = parse_args()
 
     logger.set_very_verbose(args.very_verbose)
     logger.set_verbose(args.verbose)
+
+    try:
+        build_frontend()
+    except Exception as e:
+        logger.log_error(f"Failed to build frontend: {e}")
+        sys.exit(1)
 
     try:
         config = load_config(args.json)

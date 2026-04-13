@@ -38,6 +38,7 @@ dbms_locks: Dict[tuple[str, str], threading.Lock] = {}  # (dataset_name, title) 
 benchmark_instances: Dict[str, Benchmark] = {}  # dataset_name -> Benchmark
 optimizer_dbms_name: Dict[str, Optional[str]] = {}  # dataset_name -> optimizer title
 dbms_lock = threading.Lock()  # Lock for modifying the above dicts
+dbms_restart_configs: Dict[tuple[str, str], dict] = {}  # (dataset_name, title) -> restart config
 
 
 def cleanup_dbms():
@@ -51,6 +52,49 @@ def cleanup_dbms():
                 logger.log_error(f"Error shutting down {dataset_name}/{title}: {e}")
         active_dbms.clear()
         dbms_locks.clear()
+
+
+def restart_dbms(dataset_name: str, title: str) -> Optional[str]:
+    """
+    Restart a DBMS instance. Returns an error message on failure, or None on success.
+    Acquires the per-DBMS query_lock to block concurrent queries during the restart.
+    """
+    key = (dataset_name, title)
+    query_lock = dbms_locks.get(key, threading.Lock())
+
+    with query_lock:
+        with dbms_lock:
+            config = dbms_restart_configs.get(key)
+            if config is None:
+                return f'No restart config for {dataset_name}/{title}'
+            old_dbms = active_dbms.get(key)
+
+        # Shut down outside dbms_lock — can be slow
+        if old_dbms is not None:
+            try:
+                old_dbms.__exit__(None, None, None)
+            except Exception as e:
+                logger.log_error(f"Error shutting down {dataset_name}/{title} during restart: {e}")
+
+        # Re-instantiate
+        dbms_descriptions = database_systems()
+        dbms_name = config['dbms_name']
+        try:
+            logger.log_driver(f"Restarting {dataset_name}/{title}...")
+            benchmark = benchmark_instances[dataset_name]
+            dbms = dbms_descriptions[dbms_name].instantiate(
+                benchmark, config['db_dir'], config['data_dir'], config['params'], config['settings']
+            )
+            dbms.__enter__()
+            logger.log_driver(f"Loading database for {title}...")
+            dbms.load_database()
+            with dbms_lock:
+                active_dbms[key] = dbms
+            logger.log_driver(f"✓ {title} restarted successfully")
+            return None
+        except Exception as e:
+            logger.log_error(f"Failed to restart {dataset_name}/{title}: {e}")
+            return str(e)
 
 
 def error(message: str, status_code: int = 404):
@@ -180,34 +224,34 @@ def execute_query():
         dbms = active_dbms[key]
         query_lock = dbms_locks[key]
 
-    # Serialize queries to the same DBMS
-    response = {}
-    with query_lock:
-        try:
-            result = dbms._execute(query, fetch_result=fetch_result, timeout=timeout, fetch_result_limit=fetch_result_limit)
+    # Serialize queries to the same DBMS; fail fast if a restart is in progress
+    if not query_lock.acquire(blocking=False):
+        return error(f'DBMS "{dbms_name}" is restarting, please try again shortly', 503)
+    try:
+        result = dbms._execute(query, fetch_result=fetch_result, timeout=timeout, fetch_result_limit=fetch_result_limit)
 
-            response['status'] = result.state
-            response['runtime_ms'] = result.client_total[0] if result.client_total else None
-            response['server_time_ms'] = result.total[0] if result.total else None
+        response = {}
+        response['status'] = result.state
+        response['runtime_ms'] = result.client_total[0] if result.client_total else None
+        response['server_time_ms'] = result.total[0] if result.total else None
 
-            if result.state == Result.SUCCESS:
-                if fetch_result:
-                    response['rows'] = result.rows
-                    response['columns'] = result.columns
-                    response['result'] = result.result
-            else:
-                response['error'] = result.message
+        if result.state == Result.SUCCESS:
+            if fetch_result:
+                response['rows'] = result.rows
+                response['columns'] = result.columns
+                response['result'] = result.result
+        else:
+            response['error'] = result.message
 
-            return jsonify(response)
+        return jsonify(response)
 
-        except Exception as e:
-            logger.log_error(f"Unexpected error executing query on {dataset_name}/{dbms_name}: {e}")
-            response['status'] = Result.FATAL
-            response['error'] = str(e)
-            response['runtime_ms'] = None
-            response['server_time_ms'] = None
+    except Exception as e:
+        logger.log_error(f"Unexpected error executing query on {dataset_name}/{dbms_name}: {e}")
+        threading.Thread(target=restart_dbms, args=(dataset_name, dbms_name), daemon=True).start()
+        return jsonify({'status': Result.FATAL, 'error': str(e), 'runtime_ms': None, 'server_time_ms': None})
 
-    return jsonify(response)
+    finally:
+        query_lock.release()
 
 
 @app.route('/plan', methods=['POST'])
@@ -258,26 +302,21 @@ def get_query_plan():
         dbms = active_dbms[key]
         query_lock = dbms_locks[key]
 
-    # Serialize queries to the same DBMS
-    response = {}
-    with query_lock:
-        try:
-            plan = dbms.retrieve_query_plan(query, include_system_representation=False, timeout=timeout)
-            if plan:
-                response['status'] = 'success'
-                response['query_plan'] = encode_query_plan(plan, format="json")
-            else:
-                response['status'] = 'error'
-                response['error'] = 'Query plan retrieval not supported for this DBMS'
+    # Serialize queries to the same DBMS; fail fast if a restart is in progress
+    if not query_lock.acquire(blocking=False):
+        return error(f'DBMS "{dbms_name}" is restarting, please try again shortly', 503)
+    try:
+        plan = dbms.retrieve_query_plan(query, include_system_representation=False, timeout=timeout)
+        if plan:
+            return jsonify({'status': 'success', 'query_plan': encode_query_plan(plan, format="json")})
+        return jsonify({'status': 'error', 'error': 'Query plan retrieval not supported for this DBMS'})
 
-            return jsonify(response)
+    except Exception as e:
+        logger.log_error(f"Error retrieving query plan on {dataset_name}/{dbms_name}: {e}")
+        return jsonify({'status': 'error', 'error': str(e)})
 
-        except Exception as e:
-            logger.log_error(f"Error retrieving query plan on {dataset_name}/{dbms_name}: {e}")
-            response['status'] = 'error'
-            response['error'] = str(e)
-
-    return jsonify(response)
+    finally:
+        query_lock.release()
 
 
 @app.route('/optimize', methods=['POST'])
@@ -458,6 +497,13 @@ def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir:
 
                 active_dbms[(dataset_name, title)] = dbms
                 dbms_locks[(dataset_name, title)] = threading.Lock()
+                dbms_restart_configs[(dataset_name, title)] = {
+                    'dbms_name': dbms_name,
+                    'params': params,
+                    'settings': settings,
+                    'db_dir': db_dir,
+                    'data_dir': data_dir,
+                }
                 logger.log_driver(f"✓ {title} is ready (port: {host_port})")
 
                 conn_str = dbms.connection_string()

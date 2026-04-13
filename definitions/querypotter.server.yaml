@@ -3,6 +3,10 @@ optimizer: Umbra
 datasets:
   - name: tpch
     scale: 1
+  - name: tpcds
+    scale: 1
+  - name: ssb
+    scale: 1
   - name: job
 
 systems:

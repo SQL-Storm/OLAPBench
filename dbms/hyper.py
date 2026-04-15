@@ -12,7 +12,7 @@ from util import logger, sql
 
 class Hyper(DuckDB):
 
-    versions = ["0.0.21200"]
+    versions = ["0.0.21200", "0.0.23576"]
 
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):
         super().__init__(benchmark, db_dir, data_dir, params, settings)

@@ -50,7 +50,7 @@ class Runtime:
 
 
 def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict, result_dir: str, db_dir: str, data_dir: str):
-    logger.log_driver(f"Preparing {benchmark.fullname}")
+    logger.log_driver(f"Preparing {benchmark.fullname()}")
     dbms_descriptions = database_systems()
 
     timeout = definition.get("timeout", 0)

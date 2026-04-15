@@ -70,20 +70,19 @@ async def execute_query(payload: dict):
 
         begin = time.time()
         try:
-            cursor = conn.execute_query(query=query.strip())
+            with conn.execute_query(query=query.strip()) as cursor:
+                # Extract column names
+                columns = [col.name for col in cursor.schema.columns]
             
-            # Extract column names
-            columns = [col.name for col in cursor.schema.columns]
-            
-            result = cursor.fetchall()
+                result = list(cursor)
 
-            if fetch:
-                rows = len(result)
+                if fetch:
+                    rows = len(result)
 
-                if 0 < fetch_limit < len(result):
-                    result = result[:fetch_limit]
+                    if 0 < fetch_limit < len(result):
+                        result = result[:fetch_limit]
 
-            client_total = (time.time() - begin) * 1000
+                client_total = (time.time() - begin) * 1000
         except Exception as e:
             client_total = (time.time() - begin) * 1000
             result = None

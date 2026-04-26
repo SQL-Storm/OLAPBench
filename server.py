@@ -427,7 +427,7 @@ def get_dataset():
         schema = bench.get_schema(primary_key=True, foreign_keys=False)
         schema_sql = '\n\n'.join(sql.create_table_statements(schema, alter_table=False))
 
-        queries_list, query_overrides = bench.queries('')
+        queries_list, query_overrides = bench.queries()
 
         queries = []
         for name, query_sql in queries_list:

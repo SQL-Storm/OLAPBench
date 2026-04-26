@@ -100,7 +100,7 @@ def _format_ms(value: float) -> str:
     return f"{value:.2f} ms"
 
 
-def _get_benchmark_query(queries: list[tuple[str, str]], identifier: str) -> tuple[str, str]:
+def _get_benchmark_query_name(query_names: list[str], identifier: str) -> str:
     index: int | None = None
     try:
         index = int(identifier)
@@ -108,13 +108,13 @@ def _get_benchmark_query(queries: list[tuple[str, str]], identifier: str) -> tup
         pass
 
     if index is not None:
-        if index < 1 or index > len(queries):
+        if index < 1 or index > len(query_names):
             raise ValueError(f"Benchmark query index out of range: {identifier}")
-        return queries[index - 1]
+        return query_names[index - 1]
 
-    for name, query in queries:
+    for name in query_names:
         if name == identifier:
-            return name, query
+            return name
 
     raise ValueError(f"Unknown benchmark query: {identifier}")
 
@@ -220,12 +220,12 @@ def _explain_query(dbms, query_name: str, query_text: str, timeout: int):
     _print_plan_tree(query_plan.plan)
 
 
-def _resolve_explain_input(value: str, queries: list[tuple[str, str]]) -> tuple[str, str]:
+def _resolve_explain_input(value: str, query_names: list[str]) -> str:
     value = value.strip()
     if value.startswith("\\run "):
         identifier = value[len("\\run "):].strip()
-        return _get_benchmark_query(queries, identifier)
-    return "ad_hoc", value
+        return _get_benchmark_query_name(query_names, identifier)
+    return "ad_hoc"
 
 
 def _print_help():
@@ -296,7 +296,7 @@ def main():
     dbms_descriptions = database_systems()
     dbms_description = dbms_descriptions[args.dbms]
 
-    queries, _ = benchmark.queries(args.dbms)
+    query_names = benchmark.query_names()
 
     print(f"Preparing benchmark data for {benchmark.fullname}...")
     benchmark.dbgen()
@@ -318,10 +318,11 @@ def main():
         print("Connected.")
         print(f"Benchmark: {benchmark.description}")
         print(f"DBMS: {args.dbms}")
-        print(f"Loaded benchmark queries: {len(queries)}")
+        print(f"Loaded benchmark queries: {len(query_names)}")
 
         if args.benchmark_query is not None:
-            name, query = _get_benchmark_query(queries, args.benchmark_query)
+            name = _get_benchmark_query_name(query_names, args.benchmark_query)
+            query = benchmark.read_query(name, args.dbms)
             _execute_query(dbms, name, query, config)
 
         if args.query is not None:
@@ -358,7 +359,7 @@ def main():
                     _print_help()
                     continue
                 if command == "\\list":
-                    for i, (name, _) in enumerate(queries, start=1):
+                    for i, name in enumerate(query_names, start=1):
                         print(f"{i:>3}: {name}")
                     continue
                 if command == "\\run":
@@ -366,7 +367,8 @@ def main():
                         print("Usage: \\run <index|name>")
                         continue
                     try:
-                        name, query = _get_benchmark_query(queries, value)
+                        name = _get_benchmark_query_name(query_names, value)
+                        query = benchmark.read_query(name, args.dbms)
                         _execute_query(dbms, name, query, config)
                     except Exception as e:
                         print(f"Error: {e}")
@@ -376,7 +378,8 @@ def main():
                         print("Usage: \\explain <sql|\\run <index|name>>")
                         continue
                     try:
-                        name, query = _resolve_explain_input(value, queries)
+                        name = _resolve_explain_input(value, query_names)
+                        query = value if name == "ad_hoc" else benchmark.read_query(name, args.dbms)
                         _explain_query(dbms, name, query, config.timeout)
                     except Exception as e:
                         print(f"Error: {e}")

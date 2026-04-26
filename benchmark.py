@@ -126,38 +126,43 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
             match benchmark_type:
                 case "queries":
                     umbra_planner = system.params.get("umbra_planner", False)
-                    queries, _ = benchmark.queries("umbra" if umbra_planner else system.dbms)
+                    dbms_name = "umbra" if umbra_planner else system.dbms
+
+                    logger.log_driver(f"Loading query names...")
+                    query_names = benchmark.query_names()
+                    logger.log_driver(f"Found {len(query_names)} queries")
 
                     # Shuffle the queries
                     if query_seed is not None:
                         random.seed(query_seed)
-                        random.shuffle(queries)
+                        random.shuffle(query_names)
 
                     # Filter out executed queries
                     if system.title in executed_queries:
-                        queries = [(name, query) for name, query in queries if name not in executed_queries[system.title]]
+                        query_names = [name for name in query_names if name not in executed_queries[system.title]]
 
                     # Plan the queries with Umbra
-                    if umbra_planner and len(queries) != 0:
+                    # When planning is enabled, all planned queries are loaded into a list in memory for now
+                    if umbra_planner and len(query_names) != 0:
                         logger.log_driver("Using Umbra planner")
                         umbra_planner_params = system.params.get("umbra_planner_parameter", {})
                         umbra_planner_settings = system.params.get("umbra_planner_settings", {})
+                        umbra_planned_queries = []
                         with dbms_descriptions["umbradev"].instantiate(benchmark, db_dir, data_dir, umbra_planner_params, umbra_planner_settings) as umbra:
                             umbra.load_database()
 
-                            umbra_queries = []
-                            with logger.LogProgress("Planning queries...", len(queries)) as progress:
-                                for (name, query) in queries:
+                            with logger.LogProgress("Planning queries...", len(query_names)) as progress:
+                                for name in query_names:
                                     progress.next(f'Planning {name}...')
+                                    query = benchmark.read_query(name, dbms_name)
                                     umbra_query = umbra.plan_query(query, system.dbms)
                                     if umbra_query is not None:
-                                        umbra_queries.append((name, umbra_query))
+                                        umbra_planned_queries.append((name, umbra_query))
                                     else:
                                         logger.log_warn_verbose(f"Query {name} not supported by Umbra")
                                     progress.finish()
-                            queries = umbra_queries
 
-                    if len(queries) == 0:
+                    if len(query_names) == 0:
                         runtime = runtimes[system.title]
                         rsum = formatter.format_time(sum(runtime.times))
                         rgeomean = formatter.format_time(math.nan if len(runtime.times) == 0 else geometric_mean(runtime.times))
@@ -176,8 +181,17 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                     repetitions = definition["repetitions"]
                     warmup = definition["warmup"]
 
-                    with logger.LogProgress("Running queries...", len(queries) * (repetitions + warmup), base=repetitions + warmup) as progress:
-                        for (name, query) in queries:
+                    use_lazy = not umbra_planner
+                    query_list = query_names if use_lazy else umbra_planned_queries
+                    num_queries = len(query_list)
+
+                    with logger.LogProgress("Running queries...", num_queries * (repetitions + warmup), base=repetitions + warmup) as progress:
+                        for item in query_list:
+                            if use_lazy:
+                                name = item
+                                query = benchmark.read_query(name, dbms_name)
+                            else:
+                                name, query = item
                             result = Result()
 
                             if system.title == failed_query[0] and name == failed_query[1]:

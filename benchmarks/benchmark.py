@@ -97,17 +97,8 @@ class Benchmark(ABC):
 
         return schema
 
-    def queries(self, dbms_name: str) -> tuple[list[tuple[str, str]], dict[str, dict[str, str]]]:
-        result = []
-        overrides: dict[str, dict[str, str]] = {}
-
-        dbms_name_map = {
-            "umbradev": "umbra",
-            "apollo": "sqlserver"
-        }
-        dbms_name = dbms_name_map.get(dbms_name, dbms_name)
-
-        queries_dir = pathlib.Path(self.queries_path)
+    def query_names(self) -> list[str]:
+        names = []
 
         for query_file in natsort.natsorted(os.listdir(self.queries_path)):
 
@@ -120,24 +111,41 @@ class Benchmark(ABC):
                 continue
             if self._excluded_queries and query_file in self._excluded_queries:
                 continue
+            names.append(query_file)
 
-            query_path = queries_dir / query_file
-            query = query_path.read_text().strip()
+        return names
 
-            # Collect specialized variants for this query
-            for specialized_query_path in queries_dir.glob(f"{query_file}.*"):
+    def read_query(self, query_file: str, dbms_name: str) -> str:
+        dbms_name_map = {
+            "umbradev": "umbra",
+            "apollo": "sqlserver"
+        }
+        dbms_name = dbms_name_map.get(dbms_name, dbms_name)
+
+        query_path = os.path.join(self.queries_path, query_file)
+        query = open(query_path, "r").read().strip()
+
+        # Use a specialized variant of the query, if available
+        specialized_query_path = query_path + "." + dbms_name
+        if os.path.isfile(specialized_query_path):
+            query = open(specialized_query_path, "r").read().strip()
+
+        return query
+
+    def queries(self) -> tuple[list[tuple[str, str]], dict[str, dict[str, str]]]:
+        overrides: dict[str, dict[str, str]] = {}
+        queries_dir = pathlib.Path(self.queries_path)
+        names = self.query_names()
+
+        for name in names:
+            for specialized_query_path in queries_dir.glob(f"{name}.*"):
                 suffixes = specialized_query_path.suffixes
                 if len(suffixes) < 2:
                     continue
-
                 specialized_dbms = suffixes[-1][1:]
-                overrides.setdefault(specialized_dbms, {})[query_file] = specialized_query_path.read_text().strip()
+                overrides.setdefault(specialized_dbms, {})[name] = specialized_query_path.read_text().strip()
 
-            # Use a specialized variant of the query, if available for the requested DBMS
-            query = overrides.get(dbms_name, {}).get(query_file, query)
-
-            result.append((query_file, query))
-
+        result = [(name, open(os.path.join(self.queries_path, name), "r").read().strip()) for name in names]
         return result, overrides
 
 

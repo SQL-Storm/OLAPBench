@@ -73,7 +73,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
     runtimes: Dict[Runtime] = {}
     for system in systems:
         runtimes[system.title] = Runtime(title=system.title)
-        executed_queries[system.title] = []
+        executed_queries[system.title] = set()
 
     if os.path.exists(result_csv) and benchmark_type == "queries":
         logger.log_driver(f"Found results in {result_csv}, skipping already executed queries")
@@ -89,7 +89,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                 if title not in runtimes:
                     continue
 
-                executed_queries[title].append(query)
+                executed_queries[title].add(query)
 
                 runtimes[title].queries += 1
                 if state not in [Result.FATAL, Result.GLOBAL_TIMEOUT]:

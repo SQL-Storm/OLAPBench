@@ -25,10 +25,18 @@ mkdir -p "$OUT_ABS"
 
 # Run dsdgen single-process so output is one .dat per table (matches OLAPBench TPC-DS layout).
 # --parallel N would emit sharded files like <table>_<child>_<N>.dat which the schema loader cannot consume.
+NULL_ARGS=(--null-profile "$NULLP")
+if [ "$NULLP" = "none" ]; then
+  NULL_ARGS=(--disable-null-skew)
+fi
+MCV_ARGS=(--mcv-profile "$MCVP")
+if [ "$MCVP" = "none" ]; then
+  MCV_ARGS=(--disable-mcv-skew)
+fi
 python3 "$PROD_DS_DIR/wrap_dsdgen.py" \
   --stringification-level "$STR" \
-  --null-profile "$NULLP" \
-  --mcv-profile "$MCVP" \
+  "${NULL_ARGS[@]}" \
+  "${MCV_ARGS[@]}" \
   --min-ndv-for-injection 0 \
   -SCALE "$SF" -DIR "$OUT_ABS" -FORCE
 

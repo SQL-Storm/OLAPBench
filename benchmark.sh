@@ -3,6 +3,9 @@
 SCRIPT_DIR="$(dirname $(readlink -f $0))"
 source "${SCRIPT_DIR}/.venv/bin/activate"
 
+# Increase the file limit
+ulimit -n 65535
+
 # Initialize the flags
 NORETRY=false
 

@@ -97,14 +97,14 @@ class ProdDSDescription(benchmark.BenchmarkDescription):
         parser.add_argument("--str-level", dest="str_level", type=_str_level_type, default=10,
                             help=f"stringification level {STR_LEVEL_MIN}-{STR_LEVEL_MAX} (default: 10, production)")
         parser.add_argument("--null-profile", dest="null_profile", type=str, default="medium",
-                            choices=["low", "medium", "high"],
-                            help="NULL sparsity injection profile (default: medium)")
+                            choices=["none", "low", "medium", "high"],
+                            help="NULL sparsity injection profile, or 'none' to disable (default: medium)")
         parser.add_argument("--mcv-profile", dest="mcv_profile", type=str, default="medium",
-                            choices=["low", "medium", "high"],
-                            help="MCV skew injection profile (default: medium)")
-        parser.add_argument("--dialect", dest="dialect", type=str, default="duckdb",
+                            choices=["none", "low", "medium", "high"],
+                            help="MCV skew injection profile, or 'none' to disable (default: medium)")
+        parser.add_argument("--dialect", dest="dialect", type=str, default="postgres",
                             choices=["ansi", "duckdb", "postgres"],
-                            help="SQL dialect for generated queries (default: duckdb)")
+                            help="SQL dialect for generated queries (default: postgres)")
 
     @staticmethod
     def instantiate(base_dir: str, args: dict, included_queries: list[str] = None, excluded_queries: list[str] = None) -> benchmark.Benchmark:

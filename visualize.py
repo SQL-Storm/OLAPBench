@@ -4,10 +4,14 @@
 import argparse
 import csv
 import http.server
+import io
 import json
 import os
+import posixpath
 import re
+import shlex
 import socketserver
+import subprocess
 import sys
 from ast import literal_eval
 
@@ -50,72 +54,149 @@ def query_sort_key(q):
     return (10**9, "", q)
 
 
-def list_csvs(base_dir):
-    entries = []
-    try:
-        names = os.listdir(base_dir)
-    except OSError:
-        return entries
-    for name in names:
-        if not name.endswith(".csv"):
-            continue
-        full = os.path.join(base_dir, name)
-        if not os.path.isfile(full):
-            continue
-        try:
-            mtime = os.path.getmtime(full)
-        except OSError:
-            continue
-        entries.append({
-            "name": name,
-            "path": os.path.abspath(full),
-            "mtime": mtime,
-        })
-    entries.sort(key=lambda e: -e["mtime"])
-    return entries
+_HOST_RE = re.compile(r"^([A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9_][A-Za-z0-9._-]*$")
 
 
-def safe_path(base_dir, candidate):
-    if not candidate:
+def parse_remote(spec):
+    """Detect scp-style 'user@host:path', 'host:path', or 'alias:path'. Returns (host, path) or None."""
+    if ":" not in spec:
         return None
-    full = os.path.abspath(candidate)
-    base = os.path.abspath(base_dir)
-    if full != base and not full.startswith(base + os.sep):
+    left, _, right = spec.partition(":")
+    if not _HOST_RE.match(left):
         return None
-    if not full.endswith(".csv"):
-        return None
-    if not os.path.isfile(full):
-        return None
-    return full
+    return left, right or "."
 
 
-def load_results(path):
+def load_results(stream):
     rows = []
-    with open(path, newline="") as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            if row.get("state") != "success":
-                continue
-            extra = parse_extra(row.get("extra", ""))
-            extra_numeric = {}
-            if isinstance(extra, dict):
-                for k, v in extra.items():
-                    if isinstance(v, bool):
-                        continue
-                    if isinstance(v, (int, float)) and v == v:  # filter NaN
-                        extra_numeric[k] = v
-            rows.append({
-                "system": row["title"],
-                "query": row["query"],
-                "total": parse_list(row.get("total", "")),
-                "total_mean": parse_float(row.get("total_mean")),
-                "total_median": parse_float(row.get("total_median")),
-                "execution_median": parse_float(row.get("execution_median")),
-                "compilation_median": parse_float(row.get("compilation_median")),
-                "client_total_median": parse_float(row.get("client_total_median")),
-                "extra": extra_numeric,
-            })
+    reader = csv.DictReader(stream)
+    for row in reader:
+        if row.get("state") != "success":
+            continue
+        extra = parse_extra(row.get("extra", ""))
+        extra_numeric = {}
+        if isinstance(extra, dict):
+            for k, v in extra.items():
+                if isinstance(v, bool):
+                    continue
+                if isinstance(v, (int, float)) and v == v:  # filter NaN
+                    extra_numeric[k] = v
+        rows.append({
+            "system": row["title"],
+            "query": row["query"],
+            "total": parse_list(row.get("total", "")),
+            "total_mean": parse_float(row.get("total_mean")),
+            "total_median": parse_float(row.get("total_median")),
+            "execution_median": parse_float(row.get("execution_median")),
+            "compilation_median": parse_float(row.get("compilation_median")),
+            "client_total_median": parse_float(row.get("client_total_median")),
+            "extra": extra_numeric,
+        })
     return rows
+
+
+class LocalSource:
+    def __init__(self, base_dir):
+        self.base_dir = os.path.abspath(base_dir)
+
+    def label(self):
+        return self.base_dir
+
+    def list(self):
+        entries = []
+        try:
+            names = os.listdir(self.base_dir)
+        except OSError:
+            return entries
+        for name in names:
+            if not name.endswith(".csv"):
+                continue
+            full = os.path.join(self.base_dir, name)
+            if not os.path.isfile(full):
+                continue
+            try:
+                mtime = os.path.getmtime(full)
+            except OSError:
+                continue
+            entries.append({
+                "name": name,
+                "path": os.path.abspath(full),
+                "mtime": mtime,
+            })
+        entries.sort(key=lambda e: -e["mtime"])
+        return entries
+
+    def validate(self, candidate):
+        if not candidate:
+            return None
+        full = os.path.abspath(candidate)
+        if full != self.base_dir and not full.startswith(self.base_dir + os.sep):
+            return None
+        if not full.endswith(".csv"):
+            return None
+        if not os.path.isfile(full):
+            return None
+        return full
+
+    def load(self, path):
+        with open(path, newline="") as fh:
+            return load_results(fh)
+
+
+class RemoteSource:
+    def __init__(self, host, base_dir):
+        self.host = host
+        self.base_dir = base_dir.rstrip("/") or "."
+
+    def label(self):
+        return f"{self.host}:{self.base_dir}"
+
+    def _run(self, command):
+        return subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", self.host, command],
+            check=True, capture_output=True, text=True,
+        )
+
+    def list(self):
+        cmd = (
+            f"find {shlex.quote(self.base_dir)} -maxdepth 1 -type f "
+            f"-name '*.csv' -printf '%T@\\t%p\\n'"
+        )
+        try:
+            res = self._run(cmd)
+        except subprocess.CalledProcessError as e:
+            sys.stderr.write(f"ssh list failed: {e.stderr.strip()}\n")
+            return []
+        entries = []
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                mtime_str, full = line.split("\t", 1)
+                mtime = float(mtime_str)
+            except ValueError:
+                continue
+            entries.append({
+                "name": posixpath.basename(full),
+                "path": full,
+                "mtime": mtime,
+            })
+        entries.sort(key=lambda e: -e["mtime"])
+        return entries
+
+    def validate(self, candidate):
+        if not candidate or not candidate.endswith(".csv"):
+            return None
+        norm = posixpath.normpath(candidate)
+        base = posixpath.normpath(self.base_dir)
+        if norm != base and not norm.startswith(base + "/"):
+            return None
+        return norm
+
+    def load(self, path):
+        res = self._run(f"cat {shlex.quote(path)}")
+        return load_results(io.StringIO(res.stdout))
 
 
 HTML = r"""<!DOCTYPE html>
@@ -582,7 +663,7 @@ init().catch(err => {
 
 
 def make_handler(state):
-    """state holds 'base_dir', 'current_path', 'data_json' — mutated by /api/load."""
+    """state holds 'source', 'current_path', 'data_json' — mutated by /api/load."""
     def write(self, status, content_type, body):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -598,10 +679,11 @@ def make_handler(state):
             elif self.path == "/api/data":
                 write(self, 200, "application/json", state["data_json"].encode("utf-8"))
             elif self.path == "/api/files":
+                source = state["source"]
                 body = json.dumps({
-                    "files": list_csvs(state["base_dir"]),
+                    "files": source.list(),
                     "current": state["current_path"],
-                    "base_dir": state["base_dir"],
+                    "base_dir": source.label(),
                 }).encode("utf-8")
                 write(self, 200, "application/json", body)
             else:
@@ -617,13 +699,14 @@ def make_handler(state):
                 except json.JSONDecodeError:
                     req = {}
                 target = req.get("path") or state["current_path"]
-                safe = safe_path(state["base_dir"], target)
+                source = state["source"]
+                safe = source.validate(target)
                 if safe is None:
                     body = json.dumps({"ok": False, "error": f"invalid path: {target}"}).encode("utf-8")
                     write(self, 400, "application/json", body)
                     return
                 try:
-                    rows = load_results(safe)
+                    rows = source.load(safe)
                     state["current_path"] = safe
                     state["data_json"] = json.dumps(rows)
                     body = json.dumps({
@@ -652,37 +735,71 @@ class ReusingServer(socketserver.TCPServer):
     allow_reuse_address = True
 
 
+def resolve_source(result_path):
+    """Return (source, current_path). Exits on error."""
+    remote = parse_remote(result_path)
+    if remote:
+        host, remote_path = remote
+        check = (
+            f"if [ -d {shlex.quote(remote_path)} ]; then echo dir; "
+            f"elif [ -f {shlex.quote(remote_path)} ]; then echo file; "
+            f"else echo none; fi"
+        )
+        try:
+            res = subprocess.run(
+                ["ssh", "-o", "BatchMode=yes", host, check],
+                check=True, capture_output=True, text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ssh failed: {e.stderr.strip() or e}", file=sys.stderr)
+            sys.exit(1)
+        kind = res.stdout.strip()
+        if kind == "dir":
+            source = RemoteSource(host, remote_path)
+            files = source.list()
+            if not files:
+                print(f"No CSV files found in {source.label()}", file=sys.stderr)
+                sys.exit(1)
+            return source, files[0]["path"]
+        if kind == "file":
+            base_dir = posixpath.dirname(remote_path) or "."
+            return RemoteSource(host, base_dir), remote_path
+        print(f"Not a file or directory: {host}:{remote_path}", file=sys.stderr)
+        sys.exit(1)
+
+    path = os.path.abspath(result_path)
+    if os.path.isdir(path):
+        source = LocalSource(path)
+        files = source.list()
+        if not files:
+            print(f"No CSV files found in {source.label()}", file=sys.stderr)
+            sys.exit(1)
+        return source, files[0]["path"]
+    if os.path.isfile(path):
+        return LocalSource(os.path.dirname(path) or os.getcwd()), path
+    print(f"Not a file or directory: {path}", file=sys.stderr)
+    sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("result_path",
-                        help="CSV result file or directory containing CSV result files")
+                        help="CSV result file or directory containing CSV result files. "
+                             "Use 'user@host:/path' to open a remote location over SSH.")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
 
-    path = os.path.abspath(args.result_path)
-    if os.path.isdir(path):
-        base_dir = path
-        files = list_csvs(base_dir)
-        if not files:
-            print(f"No CSV files found in {base_dir}", file=sys.stderr)
-            sys.exit(1)
-        current_path = files[0]["path"]
-    elif os.path.isfile(path):
-        base_dir = os.path.dirname(path) or os.getcwd()
-        current_path = path
-    else:
-        print(f"Not a file or directory: {path}", file=sys.stderr)
-        sys.exit(1)
+    source, current_path = resolve_source(args.result_path)
 
-    rows = load_results(current_path)
+    rows = source.load(current_path)
     systems = sorted({r["system"] for r in rows})
     queries = sorted({r["query"] for r in rows}, key=query_sort_key)
     print(f"Loaded {current_path}: {len(rows)} rows · {len(systems)} systems · {len(queries)} queries",
           file=sys.stderr)
 
     state = {
-        "base_dir": base_dir,
+        "source": source,
         "current_path": current_path,
         "data_json": json.dumps(rows),
     }

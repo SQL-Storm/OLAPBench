@@ -52,7 +52,7 @@ class ResultCSV:
 
     def start_olap(self, title: str, query: str):
         with open(self.filename_current, "w") as file:
-            file.write(f"{title},{query}")
+            file.write(f"{title}\n{query}")
 
     def olap(self, title: str, dbms: str, version: str, query: str, result: Result):
         row = {

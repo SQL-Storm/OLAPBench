@@ -81,3 +81,20 @@ systems:
       relation.column.compression: LZ4
     parameter:
       umbra_db: token_lz4
+
+  - title: Umbra (ASCII, FSST)
+    dbms: umbradev
+    disabled: false
+    settings:
+      relation.column.compression: FSST
+    parameter:
+      umbra_db: ascii_fsst
+
+  - title: Umbra (Token, FSST)
+    dbms: umbradev
+    disabled: false
+    settings:
+      tokenize: true
+      relation.column.compression: FSST
+    parameter:
+      umbra_db: token_fsst

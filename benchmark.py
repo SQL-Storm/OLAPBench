@@ -50,7 +50,7 @@ class Runtime:
 
 
 def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict, result_dir: str, db_dir: str, data_dir: str):
-    logger.log_driver(f"Preparing {benchmark.fullname()}")
+    logger.log_driver(f"Preparing {benchmark.fullname}")
     dbms_descriptions = database_systems()
 
     timeout = definition.get("timeout", 0)
@@ -337,6 +337,25 @@ def run_benchmarks(args):
                 title = template.substitute(**settings, **params)
 
                 systems.append(System(title, system["dbms"], params, settings))
+
+    # Resolve sample_base (a system title) into the base system's params dict, so
+    # umbradev can copy the base's .sample files without needing the full systems list.
+    for s in systems:
+        base_title = s.params.get("sample_base")
+        if not isinstance(base_title, str):
+            continue
+        if base_title == s.title:
+            del s.params["sample_base"]
+            continue
+        base = next((x for x in systems if x.title == base_title), None)
+        if base is None:
+            logger.log_warn(f"sample_base: '{base_title}' not found in systems list")
+            del s.params["sample_base"]
+        elif base.dbms != "umbradev":
+            logger.log_warn(f"sample_base: '{base_title}' is not a umbradev system")
+            del s.params["sample_base"]
+        else:
+            s.params["sample_base"] = base.params
 
     definition["type"] = "launch" if args.launch else "queries"
     definition["clear"] = args.clear

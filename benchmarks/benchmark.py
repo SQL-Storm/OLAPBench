@@ -75,8 +75,11 @@ class Benchmark(ABC):
     def empty(self) -> bool:
         return False
 
+    def schema_path(self) -> str:
+        return os.path.join(self.path, self.name + '.dbschema.json')
+
     def get_schema(self, primary_key: bool = True, foreign_keys: bool = False) -> dict:
-        schema = schemajson.load(os.path.join(self.path, self.name + '.dbschema.json'), "dbschema.schema.json")
+        schema = schemajson.load(self.schema_path(), "dbschema.schema.json")
         for table in schema["tables"]:
             table["file"] = os.path.join(self.data_dir, table["name"] + '.' + schema["file_ending"])
             if "_eval" in table:
@@ -157,6 +160,7 @@ class BenchmarkDescription:
 def benchmarks() -> dict[str, BenchmarkDescription]:
     from benchmarks.clickbench import clickbench
     from benchmarks.job import job
+    from benchmarks.prodds import prodds
     from benchmarks.ssb import ssb
     from benchmarks.tpcds import tpcds
     from benchmarks.tpch import tpch
@@ -165,6 +169,7 @@ def benchmarks() -> dict[str, BenchmarkDescription]:
     benchmark_list = [
         clickbench.ClickBenchDescription,
         job.JOBDescription,
+        prodds.ProdDSDescription,
         ssb.SSBDescription,
         stackoverflow.StackOverflowDescription,
         tpcds.TPCDSDescription,

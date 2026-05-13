@@ -1,0 +1,15 @@
+title: Umbra
+repetitions: 5
+warmup: 3
+timeout: 60
+fetch_result: false
+output: results/databases/umbra/
+systems:
+  - title: Umbra ${version}
+    dbms: umbra
+    disabled: false
+    parameter:
+      version:
+        - "latest"
+    settings:
+      usedirectio: true

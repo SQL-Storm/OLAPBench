@@ -1,8 +1,10 @@
 import argparse
 import csv
+import glob
 import math
 import os
 import re
+import shutil
 import tempfile
 import time
 
@@ -31,6 +33,9 @@ class UmbraDev(Umbra):
         self._bin_dir = os.path.join(self._cwd, params["bin"] if "bin" in params else "bin")
 
         self._database_name = UmbraDevDescription.get_database_name(benchmark, params)
+
+        sample_base = params.get("sample_base")
+        self._sample_base_params = sample_base if isinstance(sample_base, dict) else None
 
         self.process = None
 
@@ -228,27 +233,63 @@ class UmbraDev(Umbra):
     def load_database(self):
         self.db = os.path.join(self._umbra_db, self._database_name + ".db")
         self.db_client = os.path.join(self._umbra_db_client, self._database_name + ".db")
-
-        if os.path.isfile(self.db):
-            command = f'{self.sql} {self.db_client}'
-            logger.log_verbose_dbms(f"Starting umbra with an existing database `{command}`", self)
-            self.db_exists = True
-        else:
-            command = f'{self.sql} --createdb {self.db_client}'
-            logger.log_verbose_dbms(f"Starting umbra with a new database `{command}`", self)
-            self.db_exists = False
+        self.db_exists = os.path.isfile(self.db)
 
         self._connection_string = f'{self.sql} {self.db_client}'
-
         env = self.umbra_env()
+
+        if not self.db_exists:
+            # Create the database and ingest data, then stop so the sample files are flushed to disk.
+            command = f'{self.sql} --createdb {self.db_client}'
+            logger.log_verbose_dbms(f"Starting umbra with a new database `{command}`", self)
+            self.process = Process(command, env=env)
+            self.process.start()
+            time.sleep(1)
+            super().load_database()
+            self.process.stop()
+            self.process = None
+
+        # Replace local .sample files with the base's while umbra is not running.
+        self._apply_sample_base()
+
+        # (Re)open the now-existing database for the query workload.
+        command = f'{self.sql} {self.db_client}'
+        logger.log_verbose_dbms(f"Starting umbra with an existing database `{command}`", self)
         self.process = Process(command, env=env)
         self.process.start()
         time.sleep(1)
 
-        super().load_database()
         self.process.write(f'set profiling = on;')
         time.sleep(1)
         self.process.read_and_discard()
+
+    def _apply_sample_base(self):
+        """Replace this database's .sample files with those of the configured sample_base."""
+        if self._sample_base_params is None:
+            return
+
+        base_umbra_db = os.path.join(self._db_dir, self._sample_base_params.get("umbra_db", "."))
+        base_db_name = UmbraDescription.get_database_name(self._benchmark, self._sample_base_params)
+        base_prefix = os.path.join(base_umbra_db, base_db_name + ".db.")
+        target_prefix = self.db + "."
+
+        if (os.path.realpath(os.path.dirname(base_prefix)) == os.path.realpath(os.path.dirname(target_prefix))
+                and os.path.basename(base_prefix) == os.path.basename(target_prefix)):
+            return
+
+        base_samples = glob.glob(base_prefix + "*.sample")
+        if not base_samples:
+            logger.log_warn(f"sample_base: no .sample files found at {base_prefix}*.sample")
+            return
+
+        for old in glob.glob(target_prefix + "*.sample"):
+            os.remove(old)
+
+        base_basename_len = len(os.path.basename(base_prefix))
+        for src in base_samples:
+            shutil.copy2(src, target_prefix + os.path.basename(src)[base_basename_len:])
+
+        logger.log_driver(f"sample_base: copied {len(base_samples)} .sample files from {base_prefix}* to {target_prefix}*")
 
     def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> QueryPlan:
         result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True, timeout=timeout).result

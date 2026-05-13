@@ -1,0 +1,83 @@
+title: Umbra - Tokens (Cold)
+repetitions: 5
+warmup: 3
+timeout: 10
+fetch_result: false
+output: results/tokens_cold/
+parameter:
+  sample_base: Umbra (ASCII)
+settings:
+  usedirectio: true
+  parallel: 16
+  optimizer.indexoverhead: 1000
+  tokenize: false
+  optimizer.forcedetokenize: false
+  relation.column.compression: None
+  relation.column.lazydecompress: false
+  relation.column.compressnumerics: false
+  relation.column.async.alwaysretrieve: true
+systems:
+  - title: Umbra (ASCII)
+    dbms: umbradev
+    disabled: false
+    parameter:
+      umbra_db: ascii
+
+  - title: Umbra (Token)
+    dbms: umbradev
+    disabled: false
+    settings:
+      tokenize: true
+    parameter:
+      umbra_db: token
+
+  - title: Umbra (ASCII, OnPair)
+    dbms: umbradev
+    disabled: false
+    settings:
+      relation.column.compression: OnPair
+    parameter:
+      umbra_db: ascii_onpair
+
+  - title: Umbra (Token, OnPair)
+    dbms: umbradev
+    disabled: false
+    settings:
+      tokenize: true
+      relation.column.compression: OnPair
+    parameter:
+      umbra_db: token_onpair
+
+  - title: Umbra (ASCII, Zstd)
+    dbms: umbradev
+    disabled: false
+    settings:
+      relation.column.compression: Zstd
+    parameter:
+      umbra_db: ascii_zstd
+
+  - title: Umbra (Token, Zstd)
+    dbms: umbradev
+    disabled: false
+    settings:
+      tokenize: true
+      relation.column.compression: Zstd
+    parameter:
+      umbra_db: token_zstd
+
+  - title: Umbra (ASCII, LZ4)
+    dbms: umbradev
+    disabled: false
+    settings:
+      relation.column.compression: LZ4
+    parameter:
+      umbra_db: ascii_lz4
+
+  - title: Umbra (Token, LZ4)
+    dbms: umbradev
+    disabled: false
+    settings:
+      tokenize: true
+      relation.column.compression: LZ4
+    parameter:
+      umbra_db: token_lz4

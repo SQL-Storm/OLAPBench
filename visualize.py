@@ -71,25 +71,27 @@ def load_results(stream):
     rows = []
     reader = csv.DictReader(stream)
     for row in reader:
-        if row.get("state") != "success":
-            continue
-        extra = parse_extra(row.get("extra", ""))
+        state = row.get("state") or ""
+        success = state == "success"
         extra_numeric = {}
-        if isinstance(extra, dict):
-            for k, v in extra.items():
-                if isinstance(v, bool):
-                    continue
-                if isinstance(v, (int, float)) and v == v:  # filter NaN
-                    extra_numeric[k] = v
+        if success:
+            extra = parse_extra(row.get("extra", ""))
+            if isinstance(extra, dict):
+                for k, v in extra.items():
+                    if isinstance(v, bool):
+                        continue
+                    if isinstance(v, (int, float)) and v == v:  # filter NaN
+                        extra_numeric[k] = v
         rows.append({
             "system": row["title"],
             "query": row["query"],
-            "total": parse_list(row.get("total", "")),
-            "total_mean": parse_float(row.get("total_mean")),
-            "total_median": parse_float(row.get("total_median")),
-            "execution_median": parse_float(row.get("execution_median")),
-            "compilation_median": parse_float(row.get("compilation_median")),
-            "client_total_median": parse_float(row.get("client_total_median")),
+            "state": state,
+            "total": parse_list(row.get("total", "")) if success else [],
+            "total_mean": parse_float(row.get("total_mean")) if success else None,
+            "total_median": parse_float(row.get("total_median")) if success else None,
+            "execution_median": parse_float(row.get("execution_median")) if success else None,
+            "compilation_median": parse_float(row.get("compilation_median")) if success else None,
+            "client_total_median": parse_float(row.get("client_total_median")) if success else None,
             "extra": extra_numeric,
         })
     return rows
@@ -266,6 +268,25 @@ HTML = r"""<!DOCTYPE html>
   @media (max-width: 1100px) { .row { grid-template-columns: 1fr; } }
   .stats { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
   .stats strong { color: var(--text); }
+  table.summary { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  table.summary th, table.summary td {
+    padding: 0.4rem 0.6rem;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  table.summary th { font-weight: 600; color: var(--muted); }
+  table.summary th:first-child, table.summary td:first-child { text-align: left; }
+  table.summary tr:last-child td { border-bottom: none; }
+  table.summary td.num { font-variant-numeric: tabular-nums; }
+  .sys-swatch {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 2px;
+    margin-right: 0.4rem;
+    vertical-align: -1px;
+  }
 </style>
 </head>
 <body>
@@ -274,6 +295,17 @@ HTML = r"""<!DOCTYPE html>
     <div class="meta" id="meta"></div>
   </div>
   <div class="file-bar" id="fileBar"></div>
+
+  <div class="row">
+    <div class="card">
+      <h2>Summary per system</h2>
+      <div id="summary"></div>
+    </div>
+    <div class="card">
+      <h2>Failing queries</h2>
+      <div id="failures"></div>
+    </div>
+  </div>
 
   <div class="card">
     <h2>End-to-end runtime distribution per system</h2>
@@ -354,8 +386,9 @@ function basename(p) {
 
 function updateMeta() {
   const name = basename(currentFile);
+  const successCount = data.filter(r => r.state === "success").length;
   document.getElementById("meta").textContent =
-    `${name ? name + " · " : ""}${data.length} successful runs · ${systems.length} systems · ${queries.length} queries`;
+    `${name ? name + " · " : ""}${data.length} runs (${successCount} successful) · ${systems.length} systems · ${queries.length} queries`;
 }
 
 async function fetchData() {
@@ -446,6 +479,97 @@ function syncSystemSelect(sel, preferred) {
 async function init() {
   await fetchFiles();
   await fetchData();
+
+  // ---------- Summary table: counts and runtime aggregates per system ----------
+  function median(xs) {
+    if (!xs.length) return null;
+    const sorted = [...xs].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  function fmtMs(v) {
+    if (v == null) return "–";
+    return v.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " ms";
+  }
+  function renderSummary() {
+    const rowsBySys = systems.map(s => {
+      const all = data.filter(r => r.system === s);
+      const succ = all.filter(r => r.state === "success");
+      const times = succ.map(r => r.total_median).filter(v => v != null);
+      const total = times.reduce((a, b) => a + b, 0);
+      return {
+        system: s,
+        success: succ.length,
+        fatal: all.filter(r => r.state === "fatal").length,
+        error: all.filter(r => r.state === "error").length,
+        timeout: all.filter(r => r.state === "timeout" || r.state === "global_timeout").length,
+        total: times.length ? total : null,
+        avg: times.length ? total / times.length : null,
+        med: median(times),
+      };
+    });
+    let html = `<table class="summary"><thead><tr>
+      <th>System</th>
+      <th>Success</th><th>Fatal</th><th>Error</th><th>Timeout</th>
+      <th>Total runtime</th><th>Avg runtime</th><th>Median runtime</th>
+    </tr></thead><tbody>`;
+    rowsBySys.forEach(c => {
+      html += `<tr>
+        <td><span class="sys-swatch" style="background:${sysColor[c.system]}"></span>${c.system}</td>
+        <td class="num">${c.success}</td>
+        <td class="num">${c.fatal}</td>
+        <td class="num">${c.error}</td>
+        <td class="num">${c.timeout}</td>
+        <td class="num">${fmtMs(c.total)}</td>
+        <td class="num">${fmtMs(c.avg)}</td>
+        <td class="num">${fmtMs(c.med)}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+    document.getElementById("summary").innerHTML = html;
+  }
+
+  // ---------- Failing queries table: grouped by state (fatal → error → timeout) ----------
+  function renderFailures() {
+    const groups = [
+      { states: ["fatal"], label: "Fatal" },
+      { states: ["error"], label: "Error" },
+      { states: ["timeout", "global_timeout"], label: "Timeout" },
+    ];
+    const out = [];
+    groups.forEach(g => {
+      const stateSet = new Set(g.states);
+      const byQuery = {};
+      data.forEach(r => {
+        if (stateSet.has(r.state)) {
+          (byQuery[r.query] = byQuery[r.query] || []).push(r.system);
+        }
+      });
+      Object.entries(byQuery)
+        .map(([q, sys]) => ({ query: q, systems: [...sys].sort() }))
+        .sort((a, b) => b.systems.length - a.systems.length || compareQ(a.query, b.query))
+        .forEach(e => out.push({ type: g.label, ...e }));
+    });
+
+    let html = `<table class="summary"><thead><tr>
+      <th>Type</th><th>Query</th><th>Systems</th>
+    </tr></thead><tbody>`;
+    if (!out.length) {
+      html += `<tr><td colspan="3" style="text-align:center; color: var(--muted)">No failures</td></tr>`;
+    }
+    out.forEach(r => {
+      const sysHtml = r.systems.map(s =>
+        `<span style="white-space:nowrap; margin-right:0.5rem;"><span class="sys-swatch" style="background:${sysColor[s] || "#999"}"></span>${s}</span>`
+      ).join("");
+      html += `<tr>
+        <td>${r.type}</td>
+        <td>${r.query}</td>
+        <td style="text-align:left">${sysHtml}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+    document.getElementById("failures").innerHTML = html;
+  }
 
   // ---------- Boxplot: one box per system, distribution of total_median across queries ----------
   function renderBox() {
@@ -622,6 +746,8 @@ async function init() {
   sysASel.onchange = sysBSel.onchange = cmpMetricSel.onchange = renderComparison;
 
   function renderAll() {
+    renderSummary();
+    renderFailures();
     renderBox();
     renderBars();
     renderComparison();

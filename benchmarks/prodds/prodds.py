@@ -64,10 +64,10 @@ class ProdDS(benchmark.Benchmark):
     @property
     def queries_path(self) -> str:
         suffix = "" if self.dialect == "ansi" else f"_{self.dialect}"
-        return os.path.join(self._base_dir, "data", self.data_dir, f"queries{suffix}")
+        return os.path.join(self._base_dir, self.data_dir, f"queries{suffix}")
 
     def schema_path(self) -> str:
-        return os.path.join(self._base_dir, "data", self.data_dir, "schema.json")
+        return os.path.join(self._base_dir, self.data_dir, "schema.json")
 
     def dbgen(self):
         cmd = (

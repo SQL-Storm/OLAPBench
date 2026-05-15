@@ -23,6 +23,8 @@ source "$PROD_DS_DIR/.venv/bin/activate"
 
 mkdir -p "$OUT_ABS"
 
+export STRINGIFY_BACKEND=cpp
+
 # Run dsdgen single-process so output is one .dat per table (matches OLAPBench TPC-DS layout).
 # --parallel N would emit sharded files like <table>_<child>_<N>.dat which the schema loader cannot consume.
 NULL_ARGS=(--null-profile "$NULLP")
@@ -33,6 +35,7 @@ MCV_ARGS=(--mcv-profile "$MCVP")
 if [ "$MCVP" = "none" ]; then
   MCV_ARGS=(--disable-mcv-skew)
 fi
+echo "$PROD_DS_DIR/wrap_dsdgen.py --stringification-level $STR ${NULL_ARGS[*]} ${MCV_ARGS[*]} --min-ndv-for-injection 0 -SCALE $SF -DIR $OUT_ABS -FORCE"
 python3 "$PROD_DS_DIR/wrap_dsdgen.py" \
   --stringification-level "$STR" \
   "${NULL_ARGS[@]}" \

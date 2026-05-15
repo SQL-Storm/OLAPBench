@@ -104,6 +104,9 @@ class LocalSource:
     def label(self):
         return self.base_dir
 
+    def host_prefix(self):
+        return ""
+
     def list(self):
         entries = []
         try:
@@ -152,6 +155,9 @@ class RemoteSource:
 
     def label(self):
         return f"{self.host}:{self.base_dir}"
+
+    def host_prefix(self):
+        return f"{self.host}:"
 
     def _run(self, command):
         return subprocess.run(
@@ -374,7 +380,7 @@ function compareQ(a, b) {
 }
 
 let data = [], systems = [], queries = [], sysColor = {};
-let currentFile = null, baseDir = "";
+let currentFile = null, baseDir = "", hostPrefix = "";
 let timingMetrics = ["total_median", "total_mean", "execution_median", "compilation_median", "client_total_median"];
 let extraMetrics = [];
 
@@ -385,10 +391,10 @@ function basename(p) {
 }
 
 function updateMeta() {
-  const name = basename(currentFile);
+  const full = currentFile ? hostPrefix + currentFile : "";
   const successCount = data.filter(r => r.state === "success").length;
   document.getElementById("meta").textContent =
-    `${name ? name + " · " : ""}${data.length} runs (${successCount} successful) · ${systems.length} systems · ${queries.length} queries`;
+    `${full ? full + " · " : ""}${data.length} runs (${successCount} successful) · ${systems.length} systems · ${queries.length} queries`;
 }
 
 async function fetchData() {
@@ -408,6 +414,7 @@ async function fetchFiles() {
   const res = await fetch("/api/files").then(r => r.json());
   currentFile = res.current;
   baseDir = res.base_dir || "";
+  hostPrefix = res.host_prefix || "";
   const bar = document.getElementById("fileBar");
   bar.innerHTML = "";
   res.files.forEach(f => {
@@ -810,6 +817,7 @@ def make_handler(state):
                     "files": source.list(),
                     "current": state["current_path"],
                     "base_dir": source.label(),
+                    "host_prefix": source.host_prefix(),
                 }).encode("utf-8")
                 write(self, 200, "application/json", body)
             else:

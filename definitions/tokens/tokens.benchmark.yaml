@@ -9,8 +9,8 @@ parameter:
 settings:
   usedirectio: true
   parallel: 16
-  optimizer.indexoverhead: 1000
   tokenize: false
+  optimizer.disableindex: true
   optimizer.forcedetokenize: false
   relation.column.compression: None
   relation.column.lazydecompress: false

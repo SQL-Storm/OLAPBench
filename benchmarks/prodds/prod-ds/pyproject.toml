@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "proddskit"
+version = "1.0.0"
+description = "A data- and query-centric extension to TPC-DS for production-realistic benchmarking."
+readme = "README.md"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [
+    {name = "Jan Vincent Szlang", email = "jvs34@cam.ac.uk"},
+    {name = "Sebastian Bress"},
+    {name = "Evangelia Kalyvianaki"},
+]
+dependencies = [
+    "pyyaml>=6.0",
+    "click>=8.1",
+    "psutil>=5.9",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+prodds-kit = "prodds_kit:main"
+
+[tool.setuptools.packages.find]
+include = ["workload*", "experiments*", "prodds_kit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "needs_tpcds_tools: test requires built TPC-DS toolkit (dsdgen/dsqgen)",
+    "needs_engine: test requires a running database engine",
+    "needs_cpp: test requires C++ compiler for stringify_cpp",
+]

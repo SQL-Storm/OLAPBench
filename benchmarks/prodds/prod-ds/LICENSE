@@ -1,0 +1,36 @@
+Academic License — Non-Commercial Research and Educational Use Only
+
+Copyright (c) 2026 Jan Vincent Szlang, Sebastian Bress, Evangelia Kalyvianaki
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, and distribute the Software for non-commercial research and
+educational purposes only, subject to the following conditions:
+
+1. The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+2. The Software shall not be used for commercial purposes without prior
+   written consent from the copyright holders. Commercial purposes include,
+   but are not limited to, incorporating the Software into a product for
+   sale or using the Software to provide a commercial service.
+
+3. Any academic publication or presentation that uses the Software or results
+   derived from the Software shall cite:
+
+   Jan Vincent Szlang, Sebastian Bress, and Evangelia Kalyvianaki.
+   "Scaling Analytical Benchmarks to Production Complexity:
+    A Data- and Query-Centric Extension to TPC-DS."
+   Technical Report, University of Cambridge, 2026.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+NOTE: This license applies to the Prod-DS extensions only. The underlying
+TPC-DS toolkit is subject to the TPC End User License Agreement and is
+fetched separately during installation. See NOTICE.md for details.

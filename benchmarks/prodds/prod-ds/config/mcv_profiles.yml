@@ -1,0 +1,260 @@
+# Shipped tiers (referenced in the paper):
+#   NULL: null_low, fleet_realworld_final (medium/default), null_high
+#   MCV:  mcv_low, mcv_fleet_default (medium/default), mcv_high
+# Legacy profiles below are preserved for historical reference.
+
+profiles:
+  mcv_fleet_default:
+    column_selection_fraction: 0.70
+    selection_fraction_scope: overall
+    exclude_tables:
+      - date_dim
+      - time_dim
+    exclude_qualified_columns:
+      - item.i_category
+      - item.i_class
+      - item.i_brand
+      - item.i_color
+      - item.i_size
+      - item.i_units
+      - item.i_current_price
+      - store.s_state
+      - store.s_city
+      - store.s_zip
+      - store.s_county
+      - customer_address.ca_state
+      - customer_address.ca_city
+      - customer_address.ca_zip
+      - customer_address.ca_county
+      - customer_address.ca_country
+      - customer_address.ca_gmt_offset
+      - customer_demographics.cd_marital_status
+      - customer_demographics.cd_education_status
+      - customer_demographics.cd_gender
+      - customer_demographics.cd_credit_rating
+      - customer.c_preferred_cust_flag
+      - customer.c_birth_country
+      - household_demographics.hd_buy_potential
+      - income_band.ib_lower_bound
+      - income_band.ib_upper_bound
+      - inventory.inv_quantity_on_hand
+      - promotion.p_channel_dmail
+      - promotion.p_channel_email
+      - promotion.p_channel_tv
+      - promotion.p_channel_radio
+      - promotion.p_channel_press
+      - promotion.p_channel_event
+      - promotion.p_channel_demo
+      - ship_mode.sm_carrier
+      - reason.r_reason_desc
+      - store_sales.ss_ext_list_price
+      - store_sales.ss_ext_wholesale_cost
+      - store_sales.ss_ext_discount_amt
+      - store_sales.ss_ext_sales_price
+      - catalog_sales.cs_ext_list_price
+      - catalog_sales.cs_ext_wholesale_cost
+      - catalog_sales.cs_ext_discount_amt
+      - catalog_sales.cs_ext_sales_price
+      - web_sales.ws_sales_price
+      - web_sales.ws_net_profit
+      - web_sales.ws_ext_list_price
+      - web_sales.ws_ext_wholesale_cost
+      - web_sales.ws_ext_discount_amt
+      - web_sales.ws_ext_sales_price
+    top20_buckets:
+      - weight: 0.35
+        min: 0.00
+        max: 0.05
+      - weight: 0.20
+        min: 0.05
+        max: 0.20
+      - weight: 0.20
+        min: 0.20
+        max: 0.60
+      - weight: 0.20
+        min: 0.60
+        max: 0.95
+      - weight: 0.05
+        min: 0.95
+        max: 0.999
+    r_buckets:
+      - weight: 0.25
+        min: 0.10
+        max: 0.30
+      - weight: 0.45
+        min: 0.30
+        max: 0.65
+      - weight: 0.30
+        min: 0.65
+        max: 0.95
+
+  mcv_low:
+    column_selection_fraction: 0.35
+    selection_fraction_scope: overall
+    exclude_tables:
+      - date_dim
+      - time_dim
+    exclude_qualified_columns:
+      - item.i_category
+      - item.i_class
+      - item.i_brand
+      - item.i_color
+      - item.i_size
+      - item.i_units
+      - item.i_current_price
+      - store.s_state
+      - store.s_city
+      - store.s_zip
+      - store.s_county
+      - customer_address.ca_state
+      - customer_address.ca_city
+      - customer_address.ca_zip
+      - customer_address.ca_county
+      - customer_address.ca_country
+      - customer_address.ca_gmt_offset
+      - customer_demographics.cd_marital_status
+      - customer_demographics.cd_education_status
+      - customer_demographics.cd_gender
+      - customer_demographics.cd_credit_rating
+      - customer.c_preferred_cust_flag
+      - customer.c_birth_country
+      - household_demographics.hd_buy_potential
+      - income_band.ib_lower_bound
+      - income_band.ib_upper_bound
+      - inventory.inv_quantity_on_hand
+      - promotion.p_channel_dmail
+      - promotion.p_channel_email
+      - promotion.p_channel_tv
+      - promotion.p_channel_radio
+      - promotion.p_channel_press
+      - promotion.p_channel_event
+      - promotion.p_channel_demo
+      - ship_mode.sm_carrier
+      - reason.r_reason_desc
+      - store_sales.ss_ext_list_price
+      - store_sales.ss_ext_wholesale_cost
+      - store_sales.ss_ext_discount_amt
+      - store_sales.ss_ext_sales_price
+      - catalog_sales.cs_ext_list_price
+      - catalog_sales.cs_ext_wholesale_cost
+      - catalog_sales.cs_ext_discount_amt
+      - catalog_sales.cs_ext_sales_price
+      - web_sales.ws_sales_price
+      - web_sales.ws_net_profit
+      - web_sales.ws_ext_list_price
+      - web_sales.ws_ext_wholesale_cost
+      - web_sales.ws_ext_discount_amt
+      - web_sales.ws_ext_sales_price
+    top20_buckets:
+      - weight: 0.50
+        min: 0.00
+        max: 0.05
+      - weight: 0.25
+        min: 0.05
+        max: 0.20
+      - weight: 0.15
+        min: 0.20
+        max: 0.40
+      - weight: 0.08
+        min: 0.40
+        max: 0.60
+      - weight: 0.02
+        min: 0.60
+        max: 0.80
+    r_buckets:
+      - weight: 0.25
+        min: 0.10
+        max: 0.30
+      - weight: 0.45
+        min: 0.30
+        max: 0.65
+      - weight: 0.30
+        min: 0.65
+        max: 0.95
+
+  mcv_high:
+    column_selection_fraction: 0.90
+    selection_fraction_scope: overall
+    exclude_tables:
+      - date_dim
+      - time_dim
+    exclude_qualified_columns:
+      - item.i_category
+      - item.i_class
+      - item.i_brand
+      - item.i_color
+      - item.i_size
+      - item.i_units
+      - item.i_current_price
+      - store.s_state
+      - store.s_city
+      - store.s_zip
+      - store.s_county
+      - customer_address.ca_state
+      - customer_address.ca_city
+      - customer_address.ca_zip
+      - customer_address.ca_county
+      - customer_address.ca_country
+      - customer_address.ca_gmt_offset
+      - customer_demographics.cd_marital_status
+      - customer_demographics.cd_education_status
+      - customer_demographics.cd_gender
+      - customer_demographics.cd_credit_rating
+      - customer.c_preferred_cust_flag
+      - customer.c_birth_country
+      - household_demographics.hd_buy_potential
+      - income_band.ib_lower_bound
+      - income_band.ib_upper_bound
+      - inventory.inv_quantity_on_hand
+      - promotion.p_channel_dmail
+      - promotion.p_channel_email
+      - promotion.p_channel_tv
+      - promotion.p_channel_radio
+      - promotion.p_channel_press
+      - promotion.p_channel_event
+      - promotion.p_channel_demo
+      - ship_mode.sm_carrier
+      - reason.r_reason_desc
+      - store_sales.ss_ext_list_price
+      - store_sales.ss_ext_wholesale_cost
+      - store_sales.ss_ext_discount_amt
+      - store_sales.ss_ext_sales_price
+      - catalog_sales.cs_ext_list_price
+      - catalog_sales.cs_ext_wholesale_cost
+      - catalog_sales.cs_ext_discount_amt
+      - catalog_sales.cs_ext_sales_price
+      - web_sales.ws_sales_price
+      - web_sales.ws_net_profit
+      - web_sales.ws_ext_list_price
+      - web_sales.ws_ext_wholesale_cost
+      - web_sales.ws_ext_discount_amt
+      - web_sales.ws_ext_sales_price
+    top20_buckets:
+      - weight: 0.03
+        min: 0.00
+        max: 0.05
+      - weight: 0.05
+        min: 0.05
+        max: 0.20
+      - weight: 0.07
+        min: 0.20
+        max: 0.40
+      - weight: 0.30
+        min: 0.40
+        max: 0.60
+      - weight: 0.40
+        min: 0.60
+        max: 0.95
+      - weight: 0.15
+        min: 0.95
+        max: 0.99
+    r_buckets:
+      - weight: 0.25
+        min: 0.10
+        max: 0.30
+      - weight: 0.45
+        min: 0.30
+        max: 0.65
+      - weight: 0.30
+        min: 0.65
+        max: 0.95

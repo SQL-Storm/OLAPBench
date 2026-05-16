@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BASE = REPO_ROOT / "benchmarks" / "tpcds" / "tpcds.dbschema.json"
-PROD_DS_DIR = REPO_ROOT / "prod-ds"
+PROD_DS_DIR = REPO_ROOT / "benchmarks" / "prodds" / "prod-ds"
 
 NOT_NULL_RE = re.compile(r"\bnot\s+null\b", re.IGNORECASE)
 

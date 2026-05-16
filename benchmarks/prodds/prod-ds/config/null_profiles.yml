@@ -1,0 +1,306 @@
+# Shipped tiers (referenced in the paper):
+#   NULL: null_low, fleet_realworld_final (medium/default), null_high
+#   MCV:  mcv_low, mcv_fleet_default (medium/default), mcv_high
+# Legacy profiles below are preserved for historical reference.
+
+profiles:
+  fleet_default:
+    # Fraction of eligible non-key columns that receive a non-zero NULL probability.
+    column_selection_fraction: 0.30
+    # Marker emitted for NULL values in generated data files.
+    null_marker: ""
+    # Heavy-tailed NULL probability mixture used to derive per-column rates.
+    buckets:
+      - weight: 0.50
+        min: 0.05
+        max: 0.15
+      - weight: 0.35
+        min: 0.15
+        max: 0.50
+      - weight: 0.12
+        min: 0.50
+        max: 0.90
+      - weight: 0.03
+        min: 0.95
+        max: 0.995
+
+  fleet_v2_default:
+    # Target share of ALL columns (not just eligible) that should receive non-zero NULL probability.
+    column_selection_fraction: 0.20
+    selection_fraction_scope: overall
+    null_marker: ""
+    buckets:
+      - weight: 0.45
+        min: 0.00
+        max: 0.01
+      - weight: 0.15
+        min: 0.01
+        max: 0.05
+      - weight: 0.10
+        min: 0.05
+        max: 0.25
+      - weight: 0.18
+        min: 0.25
+        max: 0.75
+      - weight: 0.12
+        min: 0.90
+        max: 0.995
+
+  fleet_v3_default:
+    # Target share of ALL columns that receive non-zero NULL probability.
+    column_selection_fraction: 0.16
+    selection_fraction_scope: overall
+    null_marker: ""
+    buckets:
+      - weight: 0.45
+        min: 0.00
+        max: 0.01
+      - weight: 0.22
+        min: 0.01
+        max: 0.05
+      - weight: 0.15
+        min: 0.05
+        max: 0.20
+      - weight: 0.08
+        min: 0.20
+        max: 0.50
+      - weight: 0.10
+        min: 0.90
+        max: 0.99
+
+  null_low:
+    # Low sparsity tier: fewer columns selected, weight shifted toward low NULL probabilities.
+    column_selection_fraction: 0.12
+    selection_fraction_scope: overall
+    null_marker: ""
+    exclude_tables:
+      - date_dim
+      - time_dim
+    exclude_qualified_columns:
+      - item.i_category
+      - item.i_class
+      - item.i_brand
+      - item.i_color
+      - item.i_size
+      - item.i_units
+      - item.i_current_price
+      - store.s_state
+      - store.s_city
+      - store.s_zip
+      - store.s_county
+      - customer_address.ca_state
+      - customer_address.ca_city
+      - customer_address.ca_zip
+      - customer_address.ca_county
+      - customer_address.ca_country
+      - customer_address.ca_gmt_offset
+      - customer_demographics.cd_marital_status
+      - customer_demographics.cd_education_status
+      - customer_demographics.cd_gender
+      - customer_demographics.cd_credit_rating
+      - customer.c_preferred_cust_flag
+      - customer.c_birth_country
+      - household_demographics.hd_buy_potential
+      - income_band.ib_lower_bound
+      - income_band.ib_upper_bound
+      - inventory.inv_quantity_on_hand
+      - promotion.p_channel_dmail
+      - promotion.p_channel_email
+      - promotion.p_channel_tv
+      - promotion.p_channel_radio
+      - promotion.p_channel_press
+      - promotion.p_channel_event
+      - promotion.p_channel_demo
+      - ship_mode.sm_carrier
+      - reason.r_reason_desc
+      - store_sales.ss_ext_list_price
+      - store_sales.ss_ext_wholesale_cost
+      - store_sales.ss_ext_discount_amt
+      - store_sales.ss_ext_sales_price
+      - catalog_sales.cs_ext_list_price
+      - catalog_sales.cs_ext_wholesale_cost
+      - catalog_sales.cs_ext_discount_amt
+      - catalog_sales.cs_ext_sales_price
+      - web_sales.ws_sales_price
+      - web_sales.ws_net_profit
+      - web_sales.ws_ext_list_price
+      - web_sales.ws_ext_wholesale_cost
+      - web_sales.ws_ext_discount_amt
+      - web_sales.ws_ext_sales_price
+    buckets:
+      - weight: 0.45
+        min: 0.000
+        max: 0.005
+      - weight: 0.20
+        min: 0.005
+        max: 0.02
+      - weight: 0.15
+        min: 0.02
+        max: 0.10
+      - weight: 0.12
+        min: 0.10
+        max: 0.25
+      - weight: 0.06
+        min: 0.25
+        max: 0.50
+      - weight: 0.02
+        min: 0.50
+        max: 0.80
+
+  null_high:
+    # High sparsity tier: more columns selected, weight shifted toward high NULL probabilities.
+    column_selection_fraction: 0.40
+    selection_fraction_scope: overall
+    null_marker: ""
+    exclude_tables:
+      - date_dim
+      - time_dim
+    exclude_qualified_columns:
+      - item.i_category
+      - item.i_class
+      - item.i_brand
+      - item.i_color
+      - item.i_size
+      - item.i_units
+      - item.i_current_price
+      - store.s_state
+      - store.s_city
+      - store.s_zip
+      - store.s_county
+      - customer_address.ca_state
+      - customer_address.ca_city
+      - customer_address.ca_zip
+      - customer_address.ca_county
+      - customer_address.ca_country
+      - customer_address.ca_gmt_offset
+      - customer_demographics.cd_marital_status
+      - customer_demographics.cd_education_status
+      - customer_demographics.cd_gender
+      - customer_demographics.cd_credit_rating
+      - customer.c_preferred_cust_flag
+      - customer.c_birth_country
+      - household_demographics.hd_buy_potential
+      - income_band.ib_lower_bound
+      - income_band.ib_upper_bound
+      - inventory.inv_quantity_on_hand
+      - promotion.p_channel_dmail
+      - promotion.p_channel_email
+      - promotion.p_channel_tv
+      - promotion.p_channel_radio
+      - promotion.p_channel_press
+      - promotion.p_channel_event
+      - promotion.p_channel_demo
+      - ship_mode.sm_carrier
+      - reason.r_reason_desc
+      - store_sales.ss_ext_list_price
+      - store_sales.ss_ext_wholesale_cost
+      - store_sales.ss_ext_discount_amt
+      - store_sales.ss_ext_sales_price
+      - catalog_sales.cs_ext_list_price
+      - catalog_sales.cs_ext_wholesale_cost
+      - catalog_sales.cs_ext_discount_amt
+      - catalog_sales.cs_ext_sales_price
+      - web_sales.ws_sales_price
+      - web_sales.ws_net_profit
+      - web_sales.ws_ext_list_price
+      - web_sales.ws_ext_wholesale_cost
+      - web_sales.ws_ext_discount_amt
+      - web_sales.ws_ext_sales_price
+    buckets:
+      - weight: 0.05
+        min: 0.000
+        max: 0.005
+      - weight: 0.03
+        min: 0.005
+        max: 0.02
+      - weight: 0.02
+        min: 0.02
+        max: 0.10
+      - weight: 0.10
+        min: 0.10
+        max: 0.40
+      - weight: 0.30
+        min: 0.40
+        max: 0.80
+      - weight: 0.50
+        min: 0.80
+        max: 0.995
+
+  fleet_realworld_final:
+    # Target share of ALL columns that receive non-zero NULL probability.
+    column_selection_fraction: 0.24
+    selection_fraction_scope: overall
+    null_marker: ""
+    exclude_tables:
+      - date_dim
+      - time_dim
+    exclude_qualified_columns:
+      - item.i_category
+      - item.i_class
+      - item.i_brand
+      - item.i_color
+      - item.i_size
+      - item.i_units
+      - item.i_current_price
+      - store.s_state
+      - store.s_city
+      - store.s_zip
+      - store.s_county
+      - customer_address.ca_state
+      - customer_address.ca_city
+      - customer_address.ca_zip
+      - customer_address.ca_county
+      - customer_address.ca_country
+      - customer_address.ca_gmt_offset
+      - customer_demographics.cd_marital_status
+      - customer_demographics.cd_education_status
+      - customer_demographics.cd_gender
+      - customer_demographics.cd_credit_rating
+      - customer.c_preferred_cust_flag
+      - customer.c_birth_country
+      - household_demographics.hd_buy_potential
+      - income_band.ib_lower_bound
+      - income_band.ib_upper_bound
+      - inventory.inv_quantity_on_hand
+      - promotion.p_channel_dmail
+      - promotion.p_channel_email
+      - promotion.p_channel_tv
+      - promotion.p_channel_radio
+      - promotion.p_channel_press
+      - promotion.p_channel_event
+      - promotion.p_channel_demo
+      - ship_mode.sm_carrier
+      - reason.r_reason_desc
+      - store_sales.ss_ext_list_price
+      - store_sales.ss_ext_wholesale_cost
+      - store_sales.ss_ext_discount_amt
+      - store_sales.ss_ext_sales_price
+      - catalog_sales.cs_ext_list_price
+      - catalog_sales.cs_ext_wholesale_cost
+      - catalog_sales.cs_ext_discount_amt
+      - catalog_sales.cs_ext_sales_price
+      - web_sales.ws_sales_price
+      - web_sales.ws_net_profit
+      - web_sales.ws_ext_list_price
+      - web_sales.ws_ext_wholesale_cost
+      - web_sales.ws_ext_discount_amt
+      - web_sales.ws_ext_sales_price
+    buckets:
+      - weight: 0.20
+        min: 0.00
+        max: 0.005
+      - weight: 0.05
+        min: 0.005
+        max: 0.02
+      - weight: 0.05
+        min: 0.02
+        max: 0.10
+      - weight: 0.10
+        min: 0.10
+        max: 0.40
+      - weight: 0.22
+        min: 0.40
+        max: 0.80
+      - weight: 0.40
+        min: 0.80
+        max: 0.995

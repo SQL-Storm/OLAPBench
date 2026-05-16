@@ -7,7 +7,7 @@ NULLP=${3:-medium}
 MCVP=${4:-medium}
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-PROD_DS_DIR="$REPO_ROOT/prod-ds"
+PROD_DS_DIR="$REPO_ROOT/benchmarks/prodds/prod-ds"
 OUT_REL="prodds/sf${SF}_str${STR}_null${NULLP}_mcv${MCVP}"
 OUT_ABS="$REPO_ROOT/data/$OUT_REL"
 
@@ -15,7 +15,7 @@ echo "Generating Prod-DS dataset: SF=$SF STR=$STR NULL=$NULLP MCV=$MCVP -> $OUT_
 
 if [ ! -f "$PROD_DS_DIR/.install_complete" ]; then
   echo "Bootstrapping prod-ds (one-time setup)..."
-  bash "$PROD_DS_DIR/install.sh"
+  (cd "$PROD_DS_DIR" && bash install.sh)
 fi
 
 # shellcheck disable=SC1091

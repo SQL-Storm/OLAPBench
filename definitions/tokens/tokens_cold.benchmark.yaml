@@ -11,6 +11,7 @@ settings:
   parallel: 16
   tokenize: false
   optimizer.disableindex: true
+  optimizer.sidewayinformationpassing: false
   optimizer.forcedetokenize: false
   relation.column.compression: None
   relation.column.lazydecompress: false

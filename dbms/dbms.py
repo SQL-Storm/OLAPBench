@@ -260,6 +260,7 @@ class DBMS(ABC):
 
         with logger.LogProgress("Loading tables...", len(statements)) as progress:
             j = 0
+            total_time = 0.0
             for table in schema['tables']:
                 progress.next(f'Loading {table["name"]}...')
                 time = 0.0
@@ -275,6 +276,9 @@ class DBMS(ABC):
                         j += 1
 
                 logger.log_verbose_dbms(f'Loaded {table["name"]} in {formatter.format_time(time)}', self)
+                total_time += time
+
+            logger.log_dbms(f'Loaded database in {formatter.format_time(total_time)}', self)
 
     def benchmark_query(self, queries: list[(str, str)], repetitions: int, warmup: int, timeout: int = 0, fetch_result: bool = True) -> list[str, Result]:
         results: dict[str, Result] = {}

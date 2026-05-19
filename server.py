@@ -378,7 +378,7 @@ def optimize():
             optimized = optimizer.plan_query(query, dbms)
 
             if optimized is None:
-                raise 'Query optimization failed'
+                raise Exception('Query optimization failed')
 
             return jsonify({
                 'status': 'success',

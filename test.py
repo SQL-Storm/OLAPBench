@@ -44,11 +44,11 @@ def main():
 
         results = {}
         versions = []
-        dbms = None
+        expected_dbms = None
         for system in definition["systems"]:
-            if dbms is None:
-                dbms = system["dbms"]
-            elif dbms != system["dbms"]:
+            if expected_dbms is None:
+                expected_dbms = system["dbms"]
+            elif expected_dbms != system["dbms"]:
                 raise Exception(f"System name '{system['dbms']}' in definition does not match the first system.")
 
             if isinstance(system["parameter"]["version"], list):
@@ -69,7 +69,7 @@ def main():
                     state = row["state"]
                     query = row["query"]
 
-                    if dbms != dbms:
+                    if dbms != expected_dbms:
                         raise Exception(f"System name '{dbms}' in output does not match the definition.")
 
                     if version not in versions:

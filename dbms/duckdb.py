@@ -44,6 +44,11 @@ class DuckDB(DBMS):
         "1.4.1",
         "1.4.2",
         "1.4.3",
+        "1.4.4",
+        "1.5.0",
+        "1.5.1",
+        "1.5.2",
+        "1.5.3",
     ]
 
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):

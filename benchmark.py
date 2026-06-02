@@ -113,7 +113,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
 
     if os.path.exists(result_csv + "_current") and benchmark_type == "queries":
         with open(result_csv + "_current", 'r') as file:
-            title, query = file.readline().split(",")
+            title, query = file.read().strip().split("\n")
             failed_query = (title, query)
             logger.log_driver(f"Last execution of {query} failed in {title}")
 

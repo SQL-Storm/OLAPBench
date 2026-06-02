@@ -1,0 +1,81 @@
+meta:
+  dialect: postgres
+  max_attempts: 200
+  scale: '1'
+  seed_start: 19620718
+  stringification_level: 10
+  timeout_ms: 10000
+queries:
+  query_11.sql:
+    seed: 19620718
+    template: query11.tpl
+  query_12.sql:
+    seed: 19620718
+    template: query12.tpl
+  query_17.sql:
+    seed: 19620719
+    template: query17_ext.tpl
+  query_20.sql:
+    seed: 19620718
+    template: query20.tpl
+  query_24.sql:
+    seed: 19620720
+    template: query24.tpl
+  query_4.sql:
+    seed: 19620718
+    template: query4.tpl
+  query_43.sql:
+    seed: 19620718
+    template: query43.tpl
+  query_44.sql:
+    seed: 19620723
+    template: query44_ext.tpl
+  query_46.sql:
+    seed: 19620718
+    template: query46.tpl
+  query_50.sql:
+    seed: 19620718
+    template: query50.tpl
+  query_53.sql:
+    seed: 19620718
+    template: query53.tpl
+  query_59.sql:
+    seed: 19620718
+    template: query59.tpl
+  query_64.sql:
+    seed: 19620719
+    template: query64.tpl
+  query_66.sql:
+    seed: 19620718
+    template: query66.tpl
+  query_68.sql:
+    seed: 19620718
+    template: query68.tpl
+  query_72.sql:
+    seed: 19620718
+    template: query72.tpl
+  query_73.sql:
+    seed: 19620718
+    template: query73.tpl
+  query_79.sql:
+    seed: 19620718
+    template: query79.tpl
+  query_8.sql:
+    seed: 19620723
+    template: query8.tpl
+  query_82.sql:
+    seed: 19620722
+    template: query82_ext.tpl
+  query_84.sql:
+    seed: 19620718
+    template: query84_ext.tpl
+  query_91.sql:
+    seed: 19620721
+    template: query91.tpl
+unresolved:
+  query_25.sql: 'ERROR:  canceling statement due to statement timeout'
+  query_30.sql: 'ERROR:  canceling statement due to statement timeout'
+  query_37.sql: no_nonempty_seed_within_budget
+  query_54.sql: 'ERROR:  canceling statement due to statement timeout'
+  query_6.sql: 'ERROR:  canceling statement due to statement timeout'
+  query_85.sql: no_nonempty_seed_within_budget

@@ -1,0 +1,58 @@
+global:
+  execution_mode: native  # native or docker
+  threads: 16
+  memory_limit_bytes: 68719476736  # 64 GiB
+  timeout_seconds_planning: 300
+  timeout_seconds_execution: 1800
+  cpu_affinity: [0, 1, 2, 3]
+  warmup_queries: 5
+  repetitions: 3
+  results_dir: results
+  planning_enabled: true
+  log_level: INFO
+
+experiments:
+  workload_compare:
+    tpcds_dir: /path/to/tpcds/sql
+    prodds_dir: /path/to/prodds/sql
+  join_scaling:
+    join_counts: [100, 200, 400, 800, 1600]
+    seeds: [1, 2, 3, 4, 5]
+    queries_per_join: 5
+    generator_command: "python3 /path/to/join_generator --join-count {J} --seed {SEED}"
+    output_dir: /tmp/join_queries
+    # If the generator writes to a file, set generator_output_file and include {OUTFILE} in the command.
+    # generator_output_file: /tmp/join_queries/join_J{J}_seed{SEED}.sql
+    # generator_command: "python3 /path/to/join_generator --join-count {J} --seed {SEED} --out {OUTFILE}"
+  string_sweep:
+    levels: [1, 3, 5, 7, 10]
+    generator_command: "python3 /path/to/query_generator --stringification-level {S} --output-dir {OUTDIR}"
+    query_subset_file: /path/to/subset.txt
+
+engines:
+  duckdb:
+    enabled: true
+    load_command: "bash /path/to/load_duckdb.sh"
+    database_path: /path/to/duckdb.db
+    native:
+      cli_path: duckdb
+    docker:
+      image: duckdb/duckdb:latest
+      container_dir: /data
+      volumes:
+        - /path/to:/data
+
+  cedardb:
+    enabled: true
+    load_command: "bash /path/to/load_cedardb.sh"
+    native:
+      host: 127.0.0.1
+      port: 5433
+      user: postgres
+      dbname: prodds
+      start_mode: process
+      start_command: "cedardb /path/to/cedar_db --address=127.0.0.1 --port 5433"
+    docker:
+      image: cedardb/cedardb:latest
+      container_name: experiments-cedardb
+      ports: ["5433:5433"]

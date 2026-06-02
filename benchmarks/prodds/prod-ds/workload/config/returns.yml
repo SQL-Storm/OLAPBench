@@ -1,0 +1,108 @@
+# Base: store_returns fact table
+base: returns
+# Effective base join count: physical joins in DuckDB plan for the base CTE alone.
+# The base template has 10 LEFT JOINs to dimension tables.
+b: 10
+# Columns that identify a row for rejoin in USING(...)
+join_keys: [sr_ticket_number, sr_item_sk]
+
+# Measure + allowed aggregates (ANSI-safe)
+measure: sr_return_amt
+agg_cycle: [SUM, COUNT, AVG, MIN, MAX]
+
+# One representative column per joined dimension.
+# The generator consumes all of them in a deterministic fingerprint expression
+# to prevent optimizer-side join elimination in replicated blocks.
+dim_fingerprint_columns:
+  - returned_year      # date_dim
+  - t_hour             # time_dim
+  - i_brand            # item
+  - customer_id        # customer
+  - cd_dep_count       # customer_demographics
+  - hd_vehicle_count   # household_demographics
+  - income_band        # income_band
+  - cust_zip           # customer_address
+  - store_name         # store
+  - reason_desc        # reason
+
+# Curated, FIXED order of LOD group keys (all projected into 'base')
+# -> we walk top to bottom; no randomness
+group_keys:
+  - i_brand
+  - i_category
+  - store_state
+  - store_name
+  - cust_state
+  - cd_education_status
+  - cd_credit_rating
+  - cd_dep_count
+  - hd_buy_potential
+  - hd_dep_count
+  - hd_vehicle_count
+  - income_band         # ib_income_band_sk as a robust proxy
+  - reason_desc
+  - returned_year
+  - returned_moy
+  - returned_dow
+  - returned_week_seq
+  - t_hour
+  - t_am_pm
+  - t_shift
+  - i_class
+  - i_manufact
+  - i_size
+  - i_color
+  - cust_city
+  - cust_county
+  - cust_zip
+  - store_company_name
+  - store_division_name
+
+# Calibrated overrides for canonical join-scaling levels (E3/E7).
+# Model: J(k,m) = (m+1)*(b + k*(b+1)) + m, with b=10.
+# NOTE: Targets below b are mathematically unreachable with the fixed base block width.
+target_overrides:
+  "1":    {k: 0,  m: 0}
+  "2":    {k: 0,  m: 0}
+  "4":    {k: 0,  m: 0}
+  "8":    {k: 0,  m: 0}
+  "16":   {k: 1,  m: 0}
+  "32":   {k: 2,  m: 0}
+  "64":   {k: 5,  m: 0}
+  "128":  {k: 11, m: 0}
+  "256":  {k: 22, m: 0}
+  "512":  {k: 22, m: 1}
+  "1024": {k: 2,  m: 30}
+  "2048": {k: 5,  m: 30}
+
+# ---- NEW: segment tagging (cohort) configuration ----
+filt_mode: cohort
+cohort_predicates:
+  - "i_category IN ('Home','Electronics')"
+  - "i_brand LIKE 'Brand#1%'"
+  - "i_color IN ('red','blue','black')"
+  - "i_manufact_id LIKE '%1'"            # str10: i_manufact_id is varchar
+  - "store_state IN ('CA','NY','TX')"
+  - "cust_state IN ('CA','TX','NY')"
+  - "reason_desc LIKE 'Did not%'"
+  - "returned_year BETWEEN 1998 AND 2002"
+  - "returned_moy IN (6,12)"
+  - "returned_dow IN (1,7)"
+  - "t_am_pm = 'AM'"
+  - "t_hour BETWEEN 9 AND 17"
+  - "(returned_week_seq % 2) = 0"
+  - "cd_credit_rating IN ('Good','Excellent')"
+  - "cd_education_status LIKE '%Degree%'"
+  - "hd_dep_count >= 2"
+  - "hd_vehicle_count >= 2"
+  - "income_band LIKE '%0'"              # str10: income_band is varchar
+  - "cust_zip LIKE '9%'"
+  - "i_class IN ('regular','economy')"
+  - "store_name LIKE 'ese%'"
+  - "i_size IS NOT NULL"
+
+include_segment_flags: true
+
+# Safety caps
+cap_joins: 10000
+max_filts: 2100

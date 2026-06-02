@@ -1,0 +1,469 @@
+{
+  "K_query_max": 92,
+  "enabled_edits": [
+    {
+      "edit_id": "use_ext",
+      "query_id": "query1",
+      "template": "query1_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query2",
+      "template": "query2_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query3",
+      "template": "query3_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query4",
+      "template": "query4_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query5",
+      "template": "query5_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query6",
+      "template": "query6_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query7",
+      "template": "query7_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query8",
+      "template": "query8_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query9",
+      "template": "query9_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query10",
+      "template": "query10_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query11",
+      "template": "query11_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query12",
+      "template": "query12_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query14",
+      "template": "query14_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query15",
+      "template": "query15_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query16",
+      "template": "query16_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query17",
+      "template": "query17_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query18",
+      "template": "query18_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query19",
+      "template": "query19_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query20",
+      "template": "query20_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query21",
+      "template": "query21_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query22",
+      "template": "query22_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query23",
+      "template": "query23_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query24",
+      "template": "query24_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query25",
+      "template": "query25_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query26",
+      "template": "query26_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query27",
+      "template": "query27_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query28",
+      "template": "query28_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query29",
+      "template": "query29_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query30",
+      "template": "query30_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query32",
+      "template": "query32_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query33",
+      "template": "query33_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query34",
+      "template": "query34_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query35",
+      "template": "query35_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query36",
+      "template": "query36_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query37",
+      "template": "query37_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query38",
+      "template": "query38_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query40",
+      "template": "query40_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query41",
+      "template": "query41_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query42",
+      "template": "query42_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query43",
+      "template": "query43_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query44",
+      "template": "query44_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query45",
+      "template": "query45_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query46",
+      "template": "query46_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query47",
+      "template": "query47_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query49",
+      "template": "query49_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query50",
+      "template": "query50_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query51",
+      "template": "query51_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query52",
+      "template": "query52_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query53",
+      "template": "query53_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query54",
+      "template": "query54_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query55",
+      "template": "query55_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query56",
+      "template": "query56_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query57",
+      "template": "query57_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query58",
+      "template": "query58_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query59",
+      "template": "query59_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query60",
+      "template": "query60_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query61",
+      "template": "query61_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query62",
+      "template": "query62_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query63",
+      "template": "query63_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query64",
+      "template": "query64_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query65",
+      "template": "query65_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query66",
+      "template": "query66_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query67",
+      "template": "query67_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query68",
+      "template": "query68_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query69",
+      "template": "query69_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query70",
+      "template": "query70_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query71",
+      "template": "query71_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query72",
+      "template": "query72_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query73",
+      "template": "query73_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query74",
+      "template": "query74_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query75",
+      "template": "query75_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query76",
+      "template": "query76_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query77",
+      "template": "query77_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query78",
+      "template": "query78_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query79",
+      "template": "query79_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query80",
+      "template": "query80_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query81",
+      "template": "query81_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query82",
+      "template": "query82_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query83",
+      "template": "query83_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query84",
+      "template": "query84_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query85",
+      "template": "query85_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query86",
+      "template": "query86_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query88",
+      "template": "query88_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query89",
+      "template": "query89_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query90",
+      "template": "query90_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query92",
+      "template": "query92_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query93",
+      "template": "query93_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query94",
+      "template": "query94_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query95",
+      "template": "query95_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query96",
+      "template": "query96_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query97",
+      "template": "query97_ext.tpl"
+    },
+    {
+      "edit_id": "use_ext",
+      "query_id": "query99",
+      "template": "query99_ext.tpl"
+    }
+  ],
+  "intensity": 1.0,
+  "k_query": 92,
+  "stringification_level": 10,
+  "stringification_preset": "production"
+}

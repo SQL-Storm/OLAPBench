@@ -1,0 +1,97 @@
+global:
+  execution_mode: native
+  threads: 16
+  memory_limit_bytes: 68719476736  # 64 GiB
+  timeout_seconds_planning: 300
+  timeout_seconds_execution: 1800
+  cpu_affinity: []
+  warmup_queries: 5
+  repetitions: 3
+  results_dir: "{RESULTS_DIR}"
+  planning_enabled: true
+  log_level: INFO
+
+validation:
+  enabled: true
+  check_empty: true
+  fail_on_empty: true
+  max_query_bytes: 200000
+  report_path: validation_report.csv
+
+experiments:
+  workload_compare:
+    tpcds_dir: "{TPCDS_DIR}"
+    prodds_dir: "{PRODDS_DIR}"
+  join_scaling:
+    join_counts: [100, 200, 400, 800, 1600]
+    seeds: [1, 2, 3, 4, 5]
+    queries_per_join: 5
+    generator_command: "python3 /path/to/join_generator --join-count {J} --seed {SEED} --out {OUTFILE}"
+    output_dir: "{JOIN_DIR}"
+    generator_output_file: "{JOIN_DIR}/join_J{J}_seed{SEED}.sql"
+  string_sweep:
+    levels: [1, 3, 5, 7, 10]
+    generator_command: "python3 /path/to/query_generator --stringification-level {S} --output-dir {OUTDIR}"
+    output_root: "{STRING_DIR}"
+
+engines:
+  duckdb:
+    enabled: false
+    load_command: "bash experiments/scripts/load_duckdb.sh"
+    env:
+      DATA_DIR: "{DATA_DIR}"
+      SF: "{SF}"
+      STR: "{STR}"
+      ENGINE_ROOT: "{ENGINE_ROOT}"
+    database_path: "{ENGINE_ROOT}/duckdb/duckdb_sf{SF}_str{STR}.db"
+    native:
+      cli_path: duckdb
+
+  clickhouse:
+    enabled: false
+    load_command: "bash experiments/scripts/load_clickhouse.sh"
+    env:
+      DATA_DIR: "{DATA_DIR}"
+      SF: "{SF}"
+      STR: "{STR}"
+      ENGINE_ROOT: "{ENGINE_ROOT}"
+    native:
+      host: localhost
+      port: 9000
+      user: default
+      password: ""
+      database: prodds
+      start_command: "sudo systemctl start clickhouse-server"
+      stop_command: "sudo systemctl stop clickhouse-server"
+
+  postgres:
+    enabled: false
+    load_command: "bash experiments/scripts/load_postgres.sh"
+    env:
+      DATA_DIR: "{DATA_DIR}"
+      SF: "{SF}"
+      STR: "{STR}"
+      ENGINE_ROOT: "{ENGINE_ROOT}"
+    native:
+      host: localhost
+      port: 5432
+      user: postgres
+      dbname: prodds
+      start_command: "sudo systemctl start postgresql"
+      stop_command: "sudo systemctl stop postgresql"
+
+  cedardb:
+    enabled: false
+    load_command: "bash experiments/scripts/load_cedardb.sh"
+    env:
+      DATA_DIR: "{DATA_DIR}"
+      SF: "{SF}"
+      STR: "{STR}"
+      ENGINE_ROOT: "{ENGINE_ROOT}"
+    native:
+      host: 127.0.0.1
+      port: 5433
+      user: postgres
+      dbname: prodds
+      start_mode: process
+      start_command: "cedardb {ENGINE_ROOT}/cedardb/db_sf{SF}_str{STR} --address=127.0.0.1 --port 5433"

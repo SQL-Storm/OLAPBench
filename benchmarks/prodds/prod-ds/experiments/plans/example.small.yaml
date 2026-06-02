@@ -1,0 +1,49 @@
+plan_name: small
+base_config: ../configs/base.native.yaml
+engines: [duckdb]
+system_mode: all
+
+matrix:
+  threads: [8]
+  scale_factors: [1]
+  stringification_levels: [1]
+
+experiments:
+  workload_compare:
+    enabled: true
+  join_scaling:
+    enabled: false
+  string_sweep:
+    enabled: false
+
+paths:
+  root: experiments/plan_runs/small
+
+# Pre-generate data and query suites used by workload_compare.
+generation:
+  data:
+    enabled: true
+    command: "python3 wrap_dsdgen.py --stringification-level {STR} -SCALE {SF} -DIR {DATA_DIR} -FORCE"
+    output_dir: "{DATA_DIR}"
+    fingerprint:
+      - wrap_dsdgen.py
+      - workload/dsdgen
+      - config.yml
+  tpcds_queries:
+    enabled: true
+    command: "python3 wrap_dsqgen.py --scale {SF} --stringification-level 1 --no-join --no-union --output-dir {TPCDS_DIR}"
+    output_dir: "{TPCDS_DIR}"
+    requires_experiments: [workload_compare]
+    fingerprint:
+      - wrap_dsqgen.py
+      - workload/dsqgen
+      - query_templates
+  prodds_queries:
+    enabled: true
+    command: "python3 wrap_dsqgen.py --scale {SF} --stringification-level {STR} --output-dir {PRODDS_DIR}"
+    output_dir: "{PRODDS_DIR}"
+    requires_experiments: [workload_compare]
+    fingerprint:
+      - wrap_dsqgen.py
+      - workload/dsqgen
+      - query_templates

@@ -1,0 +1,127 @@
+--
+-- Legal Notice 
+-- 
+-- This document and associated source code (the "Work") is a part of a 
+-- benchmark specification maintained by the TPC. 
+-- 
+-- The TPC reserves all right, title, and interest to the Work as provided 
+-- under U.S. and international laws, including without limitation all patent 
+-- and trademark rights therein. 
+-- 
+-- No Warranty 
+-- 
+-- 1.1 TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE INFORMATION 
+--     CONTAINED HEREIN IS PROVIDED "AS IS" AND WITH ALL FAULTS, AND THE 
+--     AUTHORS AND DEVELOPERS OF THE WORK HEREBY DISCLAIM ALL OTHER 
+--     WARRANTIES AND CONDITIONS, EITHER EXPRESS, IMPLIED OR STATUTORY, 
+--     INCLUDING, BUT NOT LIMITED TO, ANY (IF ANY) IMPLIED WARRANTIES, 
+--     DUTIES OR CONDITIONS OF MERCHANTABILITY, OF FITNESS FOR A PARTICULAR 
+--     PURPOSE, OF ACCURACY OR COMPLETENESS OF RESPONSES, OF RESULTS, OF 
+--     WORKMANLIKE EFFORT, OF LACK OF VIRUSES, AND OF LACK OF NEGLIGENCE. 
+--     ALSO, THERE IS NO WARRANTY OR CONDITION OF TITLE, QUIET ENJOYMENT, 
+--     QUIET POSSESSION, CORRESPONDENCE TO DESCRIPTION OR NON-INFRINGEMENT 
+--     WITH REGARD TO THE WORK. 
+-- 1.2 IN NO EVENT WILL ANY AUTHOR OR DEVELOPER OF THE WORK BE LIABLE TO 
+--     ANY OTHER PARTY FOR ANY DAMAGES, INCLUDING BUT NOT LIMITED TO THE 
+--     COST OF PROCURING SUBSTITUTE GOODS OR SERVICES, LOST PROFITS, LOSS 
+--     OF USE, LOSS OF DATA, OR ANY INCIDENTAL, CONSEQUENTIAL, DIRECT, 
+--     INDIRECT, OR SPECIAL DAMAGES WHETHER UNDER CONTRACT, TORT, WARRANTY,
+--     OR OTHERWISE, ARISING IN ANY WAY OUT OF THIS OR ANY OTHER AGREEMENT 
+--     RELATING TO THE WORK, WHETHER OR NOT SUCH AUTHOR OR DEVELOPER HAD 
+--     ADVANCE NOTICE OF THE POSSIBILITY OF SUCH DAMAGES. 
+-- 
+-- Contributors:
+-- 
+ define MS= ulist(dist(marital_status, 1, 1), 3);
+ define ES= ulist(dist(education, 1, 1), 3);
+ define STATE= ulist(dist(fips_county, 3, 1), 9);
+ define YEAR= random(1998,2002, uniform);
+ define _LIMIT=1000;
+
+ [_LIMITA] select [_LIMITB] substr(r_reason_desc,1,20)
+       ,avg(ws_quantity)
+       ,avg(wr_refunded_cash)
+       ,avg(wr_fee)
+       ,any_value(cd1.cd_education_status) as any_education_status
+       ,any_value(cd1.cd_marital_status) as any_marital_status
+       ,count(distinct ca_state) as distinct_state_count
+ from web_sales, web_returns, web_page, customer_demographics cd1,
+      customer_demographics cd2, customer_address, date_dim, reason 
+ where ws_web_page_sk = wp_web_page_sk
+   and ws_item_sk = wr_item_sk
+   and ws_order_number = wr_order_number
+   and ws_sold_date_sk = d_date_sk and d_year = [YEAR]
+   and wp_type is not null
+   and cd1.cd_demo_sk = wr_refunded_cdemo_sk 
+   and cd2.cd_demo_sk = wr_returning_cdemo_sk
+   and ca_address_sk = wr_refunded_addr_sk
+   and r_reason_sk = wr_reason_sk
+   and
+   (
+    (
+     cd1.cd_marital_status = '[MS.1]'
+     and
+     cd1.cd_marital_status = cd2.cd_marital_status
+     and
+     cd1.cd_education_status = '[ES.1]'
+     and 
+     cd1.cd_education_status = cd2.cd_education_status
+     and
+     ws_sales_price is not null
+    )
+   or
+    (
+     cd1.cd_marital_status = '[MS.2]'
+     and
+     cd1.cd_marital_status = cd2.cd_marital_status
+     and
+     cd1.cd_education_status = '[ES.2]' 
+     and
+     cd1.cd_education_status = cd2.cd_education_status
+     and
+     ws_sales_price is not null
+    )
+   or
+    (
+     cd1.cd_marital_status = '[MS.3]'
+     and
+     cd1.cd_marital_status = cd2.cd_marital_status
+     and
+     cd1.cd_education_status = '[ES.3]'
+     and
+     cd1.cd_education_status = cd2.cd_education_status
+     and
+     ws_sales_price is not null
+    )
+   )
+   and
+   (
+    (
+     ca_country = 'United States'
+     and
+     ca_state in ('[STATE.1]', '[STATE.2]', '[STATE.3]')
+     and ca_city is not null
+     and ws_net_profit > 0
+    )
+    or
+    (
+     ca_country = 'United States'
+     and
+     ca_state in ('[STATE.4]', '[STATE.5]', '[STATE.6]')
+     and ca_city is not null
+     and ws_net_profit > 0
+    )
+    or
+    (
+     ca_country = 'United States'
+     and
+     ca_state in ('[STATE.7]', '[STATE.8]', '[STATE.9]')
+     and ca_city is not null
+     and ws_net_profit > 0 
+   )
+  )
+group by r_reason_desc
+order by avg(wr_refunded_cash) desc
+        ,avg(wr_fee) desc
+        ,avg(ws_quantity) desc
+[_LIMITC]; 

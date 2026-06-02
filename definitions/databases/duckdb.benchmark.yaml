@@ -1,0 +1,13 @@
+title: DuckDB
+repetitions: 5
+warmup: 3
+timeout: 60
+fetch_result: true
+output: results/databases/duckdb/
+systems:
+  - title: DuckDB ${version}
+    dbms: duckdb
+    disabled: false
+    parameter:
+      version:
+        - "latest"

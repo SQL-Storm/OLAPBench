@@ -1,0 +1,29 @@
+meta:
+  dialect: postgres
+  max_attempts: 500
+  scale: '1'
+  seed_start: 19620718
+  stringification_level: 1
+  timeout_ms: 60000
+queries:
+  query_24.sql:
+    seed: 19620720
+    template: query24.tpl
+  query_25.sql:
+    seed: 19620720
+    template: query25.tpl
+  query_37.sql:
+    seed: 19620720
+    template: query37.tpl
+  query_41.sql:
+    seed: 19620720
+    template: query41.tpl
+  query_54.sql:
+    seed: 19620748
+    template: query54.tpl
+  query_58.sql:
+    seed: 19620719
+    template: query58.tpl
+  query_8.sql:
+    seed: 19620723
+    template: query8.tpl

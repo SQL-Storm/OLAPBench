@@ -62,7 +62,7 @@ class UmbraDev(Umbra):
             # Start Umbra in the docker container
             logger.log_verbose_dbms(f"Using umbra sql binary from docker container {self.docker_image_name}", self)
             env = " ".join([f"-e {key}={value}" for key, value in self.umbra_env().items()])
-            self.sql = f"docker run --rm -i -v {self._umbra_db}:/var/db:rw -v {self._data_dir}:/data:ro --user {os.getuid()}:{os.getgid()} {env} {self.docker_image_name} umbra-sql"
+            self.sql = f"docker run --rm -i -v {self._umbra_db}:/var/db:rw -v {self._data_dir}:/data:ro --ulimit nofile=1048576:1048576 --ulimit memlock=8388608:8388608 --user {os.getuid()}:{os.getgid()} {env} {self.docker_image_name} umbra-sql"
             self._umbra_db_client = "/var/db"
             self._data_dir_client = "/data"
 

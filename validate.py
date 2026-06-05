@@ -175,24 +175,20 @@ def validate_queries(csv_path):
     return valid_queries, invalid_queries
 
 
-def main():
+def write_expectation(valid, invalid, output_dir):
     """
-    Main function to validate query results.
+    Write the expectation files (valid/invalid queries and results) to output_dir.
+
+    Args:
+        valid (list): Valid queries as returned by validate_queries.
+        invalid (list): Invalid queries as returned by validate_queries.
+        output_dir (str): Directory to write the expectation files to.
     """
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument("benchmark", help="Dataset of the benchmark")
-    argparser.add_argument("result", help="Result file")
+    valid_csv = os.path.join(output_dir, "valid_queries.csv")
+    invalid_csv = os.path.join(output_dir, "invalid_queries.csv")
+    results_csv = os.path.join(output_dir, "results.csv.gz")
 
-    args = argparser.parse_args()
-    result_csv = args.result
-
-    log.header("Validate Query Results")
-
-    valid, invalid = validate_queries(result_csv)
-
-    valid_csv = os.path.join("benchmarks", args.benchmark, "valid_queries.csv")
-    invalid_csv = os.path.join("benchmarks", args.benchmark, "invalid_queries.csv")
-    results_csv = os.path.join("benchmarks", args.benchmark, "results.csv.gz")
+    os.makedirs(output_dir, exist_ok=True)
 
     log.newline()
     log.info(f"Writing valid queries to {valid_csv}")
@@ -240,6 +236,25 @@ def main():
 
     log.newline()
     log.info(f"Queries with equal results: {len(valid)} / {len(valid) + len(invalid)}")
+
+
+def main():
+    """
+    Main function to validate query results.
+    """
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("benchmark", help="Dataset of the benchmark")
+    argparser.add_argument("result", help="Result file")
+    argparser.add_argument("-o", "--output", default=None, help="Directory to write the expectation files to (default: benchmarks/<benchmark>)")
+
+    args = argparser.parse_args()
+
+    log.header("Validate Query Results")
+
+    valid, invalid = validate_queries(args.result)
+
+    output_dir = args.output if args.output is not None else os.path.join("benchmarks", args.benchmark)
+    write_expectation(valid, invalid, output_dir)
 
 
 if __name__ == "__main__":

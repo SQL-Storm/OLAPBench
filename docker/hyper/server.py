@@ -47,6 +47,11 @@ hyper = tableauhyperapi.HyperProcess(telemetry=tableauhyperapi.Telemetry.DO_NOT_
 conn = tableauhyperapi.Connection(endpoint=hyper.endpoint, database=os.path.join(result_dir.name, "db.hyper"), create_mode=tableauhyperapi.CreateMode.CREATE_AND_REPLACE)
 
 
+def error_response(message: str, client_total: float = math.nan):
+    """Build a structured error payload matching the regular response schema."""
+    return {"rows": -1, "error": message, "client_total": client_total, "total": None, "execution": None, "compilation": None}
+
+
 @app.post("/query")
 async def execute_query(payload: dict):
     query = payload.get("query")
@@ -55,74 +60,84 @@ async def execute_query(payload: dict):
     fetch_limit = int(payload.get("limit", 0))
 
     if not query:
-        return {"rows": -1, "error": "no query provided", "client_total": math.nan, "total": None, "execution": None, "compilation": None}
+        return error_response("no query provided")
 
-    with db_lock:  # Ensure thread safety
-        timer = None
-        if timeout > 0:
-            timer = threading.Timer(timeout, conn.cancel)
-            timer.start()
-
-        result = []
-        rows = -1
-        error_message = None
-        columns = []
-
-        begin = time.time()
-        try:
-            with conn.execute_query(query=query.strip()) as cursor:
-                # Extract column names
-                columns = [col.name for col in cursor.schema.columns]
-            
-                result = list(cursor)
-
-                if fetch:
-                    rows = len(result)
-
-                    if 0 < fetch_limit < len(result):
-                        result = result[:fetch_limit]
-
-                client_total = (time.time() - begin) * 1000
-        except Exception as e:
-            client_total = (time.time() - begin) * 1000
-            result = None
-            error_message = str(e)
-
-            if not hyper.is_open or "Hyperd connection terminated unexpectedly" in error_message:
-                raise e
-
-    if timer is not None:
-        timer.cancel()
-        timer.join()
-
-    total = None
-    execution = None
-    compilation = None
     try:
-        with open(os.path.join(result_dir.name, "hyperd.log"), 'r') as log:
-            for line in reversed(log.readlines()):
-                entry = json.loads(line)
+        with db_lock:  # Ensure thread safety
+            timer = None
+            if timeout > 0:
+                timer = threading.Timer(timeout, conn.cancel)
+                timer.start()
 
-                if entry["k"] == "query-end":
-                    value = entry["v"]
-                    compilation = value['pre-execution']["parsing-time"] * 1000 + value['pre-execution']["compilation-time"] * 1000
-                    execution = value["execution-time"] * 1000
-                    total = value["elapsed"] * 1000
-                    break
-    except Exception:
-        pass
+            result = []
+            rows = -1
+            error_message = None
+            columns = []
 
-    # Log results
-    if fetch:
-        with open(results_path, "w") as f:
-            # Store columns and results separately
-            result_data = {
-                "columns": columns,
-                "results": result
-            }
-            f.write(json.dumps(result_data, use_decimal=True, default=sql_encoder, allow_nan=True))
+            begin = time.time()
+            try:
+                with conn.execute_query(query=query.strip()) as cursor:
+                    # Extract column names
+                    columns = [col.name.unescaped for col in cursor.schema.columns]
 
-    return {"rows": rows, "error": error_message, "client_total": client_total, "total": total, "execution": execution, "compilation": compilation}
+                    result = list(cursor)
+
+                    if fetch:
+                        rows = len(result)
+
+                        if 0 < fetch_limit < len(result):
+                            result = result[:fetch_limit]
+
+                    client_total = (time.time() - begin) * 1000
+            except Exception as e:
+                client_total = (time.time() - begin) * 1000
+                result = None
+                error_message = str(e)
+
+                if not hyper.is_open or "Hyperd connection terminated unexpectedly" in error_message:
+                    raise e
+
+        if timer is not None:
+            timer.cancel()
+            timer.join()
+
+        total = None
+        execution = None
+        compilation = None
+        try:
+            with open(os.path.join(result_dir.name, "hyperd.log"), 'r') as log:
+                for line in reversed(log.readlines()):
+                    entry = json.loads(line)
+
+                    if entry["k"] == "query-end":
+                        value = entry["v"]
+                        compilation = value['pre-execution']["parsing-time"] * 1000 + value['pre-execution']["compilation-time"] * 1000
+                        execution = value["execution-time"] * 1000
+                        total = value["elapsed"] * 1000
+                        break
+        except Exception:
+            pass
+
+        # Log results
+        if fetch:
+            with open(results_path, "w") as f:
+                # Store columns and results separately
+                result_data = {
+                    "columns": columns,
+                    "results": result
+                }
+                f.write(json.dumps(result_data, use_decimal=True, default=sql_encoder, allow_nan=True))
+
+        return {"rows": rows, "error": error_message, "client_total": client_total, "total": total, "execution": execution, "compilation": compilation}
+    except Exception as e:
+        # A genuinely dead Hyper process is a fatal crash: re-raise so the driver
+        # sees a non-200 response and restarts the container.
+        if not hyper.is_open or "Hyperd connection terminated unexpectedly" in str(e):
+            raise
+        # Any other server-side failure (e.g. result serialization) is reported as
+        # a normal query error, with diagnostics, so the benchmark can continue
+        # instead of crashing on an opaque HTTP 500.
+        return error_response(f"olapbench server error: {e}")
 
 
 if __name__ == "__main__":

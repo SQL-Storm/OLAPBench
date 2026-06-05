@@ -7,12 +7,13 @@ from dbms.dbms import DBMS, DBMSDescription
 from dbms.duckdb import DuckDB
 from queryplan.parsers.hyperparser import HyperParser
 from queryplan.queryplan import QueryPlan
-from util import logger, sql
+from util import sql
+from util.log import log
 
 
 class Hyper(DuckDB):
 
-    versions = ["0.0.21200", "0.0.23576"]
+    versions = ["0.0.21200", "0.0.23576", "0.0.25080"]
 
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):
         super().__init__(benchmark, db_dir, data_dir, params, settings)
@@ -47,13 +48,13 @@ class Hyper(DuckDB):
         # Build the docker image
         version = self._version if self._version != "latest" else self.versions[-1]
         tag = f"sqlstorm/hyper:{version}"
-        logger.log_dbms(f"Building {tag} docker image", self)
+        log.dbms(f"Building {tag} docker image", self)
         try:
             image = self._docker.images.build(path=os.path.join(os.path.dirname(__file__), "..", "docker", "hyper"), tag=tag, buildargs={'VERSION': version}, rm=True)[0]
-            logger.log_dbms(f"Built {tag} docker image", self)
+            log.dbms(f"Built {tag} docker image", self)
             return image
         except Exception as e:
-            logger.log_dbms(f"Could not build {tag} docker image: {e}", self)
+            log.dbms(f"Could not build {tag} docker image: {e}", self)
             raise Exception(f"Could not build {tag} docker image")
 
     def _create_table_statements(self, schema: dict) -> list[str]:

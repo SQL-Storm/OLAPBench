@@ -4,7 +4,8 @@ import pathlib
 from abc import ABC, abstractmethod
 
 import natsort
-from util import schemajson, logger
+from util import schemajson
+from util.log import log
 from util.process import Process
 
 
@@ -64,7 +65,7 @@ class Benchmark(ABC):
 
     def _load_with_command(self, command):
         if not os.path.isdir(os.path.join("data", self.data_dir)):
-            logger.log_verbose_benchmark(f'Executing dbgen command `{command}`', self)
+            log.benchmark_verbose(f'Executing dbgen command `{command}`', self)
             with Process(command) as process:
                 process.wait()
 

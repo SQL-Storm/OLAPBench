@@ -10,7 +10,8 @@ from typing import Optional, List, Dict
 import docker
 from benchmarks.benchmark import Benchmark
 from queryplan.queryplan import QueryPlan
-from util import numa, logger, formatter, sql
+from util import numa, formatter, sql
+from util.log import log
 
 
 class Result:
@@ -148,15 +149,23 @@ class DBMS(ABC):
 
     def _pull_image(self):
         # Pull the docker image
-        logger.log_dbms(f"Pulling {self.docker_image_name} docker image", self)
+        log.dbms(f"Pulling {self.docker_image_name} docker image", self)
         try:
             return self._docker.images.pull(self.docker_image_name)
         except Exception as e:
-            logger.log_dbms(f"Could not pull {self.docker_image_name} docker image: {e}", self)
+            log.dbms(f"Could not pull {self.docker_image_name} docker image: {e}", self)
 
     def _start_container(self, environment: dict, source_port: int, dest_port: int, source_db_dir: str, dest_db_dir: str, docker_params: dict = {}):
         # Pull the docker image
         image = self._pull_image()
+
+        # Merge any extra bind mounts requested by the DBMS with the defaults
+        docker_params = dict(docker_params)
+        volumes = {
+            source_db_dir: {"bind": dest_db_dir, "mode": "rw"},
+            self._data_dir: {"bind": "/data", "mode": "ro"},
+        }
+        volumes.update(docker_params.pop("volumes", {}))
 
         # Start the container
         try:
@@ -171,15 +180,12 @@ class DBMS(ABC):
                 cpuset_cpus=self._cpuset_cpus,
                 cpuset_mems=self._cpuset_mems,
                 ports={f"{source_port}/tcp": dest_port},
-                volumes={
-                    source_db_dir: {"bind": dest_db_dir, "mode": "rw"},
-                    self._data_dir: {"bind": "/data", "mode": "ro"},
-                },
+                volumes=volumes,
                 **docker_params
             )
-            logger.log_dbms(f"Started {self.name} docker container", self)
+            log.dbms(f"Started {self.name} docker container", self)
         except Exception as e:
-            logger.log_dbms(f"Could not start {self.name} docker container: {e}", self)
+            log.dbms(f"Could not start {self.name} docker container: {e}", self)
             raise Exception(f"Could not start {self.name} docker container")
 
     def _container_status(self) -> str:
@@ -196,7 +202,7 @@ class DBMS(ABC):
             timer = threading.Timer(timeout, self._kill_container)
             timer.start()
 
-        logger.log_verbose_process(command)
+        log.process_verbose(command)
         result = self.container.exec_run(command)
 
         if timer is not None:
@@ -204,25 +210,25 @@ class DBMS(ABC):
             timer.join()
 
         if result.exit_code != 0:
-            logger.log_verbose_process_stderr(result.output.decode('utf-8'))
+            log.process_verbose(result.output.decode('utf-8'))
             raise Exception(result.output.decode('utf-8'))
         else:
             if result.output:
-                logger.log_verbose_process(result.output.decode('utf-8').strip())
+                log.process_verbose(result.output.decode('utf-8').strip())
 
         return result
 
     def _kill_container(self):
         if self.container is not None:
-            logger.log_dbms(f"Killing {self.name} docker container", self)
+            log.dbms(f"Killing {self.name} docker container", self)
             self.container.kill()
             self.container.wait(timeout=None, condition="removed")
-            logger.log_dbms(f"Killed {self.name} docker container", self)
+            log.dbms(f"Killed {self.name} docker container", self)
 
     def _close_container(self):
         if self.container is not None:
             self.container.stop(timeout=300)
-            logger.log_dbms(f"Stopped {self.name} docker container", self)
+            log.dbms(f"Stopped {self.name} docker container", self)
 
     def _transform_schema(self, schema: dict) -> dict:
         return sql.transform_schema(schema, escape='"', lowercase=False)
@@ -246,10 +252,10 @@ class DBMS(ABC):
 
         create_stmts = self._create_table_statements(schema)
         for create_statement in create_stmts:
-            logger.log_verbose_sql(create_statement)
+            log.sql_verbose(create_statement)
             output = self._execute(create_statement, False)
             if output.state != Result.SUCCESS:
-                logger.log_error(f'Error while creating table: {output.message}')
+                log.error(f'Error while creating table: {output.message}')
                 raise Exception(f'Error while creating table: {output.message}')
 
         statements = self._copy_statements(schema)
@@ -258,7 +264,7 @@ class DBMS(ABC):
         if len(statements) == 0:
             return
 
-        with logger.LogProgress("Loading tables...", len(statements)) as progress:
+        with log.progress("Loading tables...", len(statements)) as progress:
             j = 0
             total_time = 0.0
             for table in schema['tables']:
@@ -266,24 +272,24 @@ class DBMS(ABC):
                 time = 0.0
                 if table in non_empty_tables:
                     for _ in range(int(len(statements) / len(non_empty_tables))):
-                        logger.log_verbose_sql(statements[j])
+                        log.sql_verbose(statements[j])
                         output = self._execute(statements[j], False)
                         if output.state != Result.SUCCESS:
-                            logger.log_error(f'Error while loading table: {output.message}')
+                            log.error(f'Error while loading table: {output.message}')
                             raise Exception(f'Error while loading table: {output.message}')
                         time += output.client_total[0]
                         progress.finish()
                         j += 1
 
-                logger.log_verbose_dbms(f'Loaded {table["name"]} in {formatter.format_time(time)}', self)
+                log.dbms_verbose(f'Loaded {table["name"]} in {formatter.format_time(time)}', self)
                 total_time += time
 
-            logger.log_dbms(f'Loaded database in {formatter.format_time(total_time)}', self)
+            log.dbms(f'Loaded database in {formatter.format_time(total_time)}', self)
 
     def benchmark_query(self, queries: list[(str, str)], repetitions: int, warmup: int, timeout: int = 0, fetch_result: bool = True) -> list[str, Result]:
         results: dict[str, Result] = {}
 
-        with logger.LogProgress("Running queries...", len(queries) * (repetitions + warmup), base=repetitions + warmup) as progress:
+        with log.progress("Running queries...", len(queries) * (repetitions + warmup), base=repetitions + warmup) as progress:
             for (name, query) in queries:
                 result = Result()
 
@@ -299,7 +305,7 @@ class DBMS(ABC):
                 results[name] = result
 
                 med = median(result.client_total) if len(result.client_total) > 0 else float('nan')
-                logger.log_verbose_dbms(f'{name} {formatter.format_time(med)} ({result.rows} row)', self)
+                log.dbms_verbose(f'{name} {formatter.format_time(med)} ({result.rows} row)', self)
 
         return results
 

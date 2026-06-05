@@ -17,7 +17,8 @@ from dotenv import load_dotenv
 
 from benchmarks.benchmark import benchmark_arguments, benchmarks, Benchmark
 from dbms.dbms import Result, database_systems
-from util import logger, formatter, schemajson
+from util import formatter, schemajson
+from util.log import log
 from util.resultcsv import ResultCSV
 from util.template import Template, unfold
 
@@ -50,7 +51,7 @@ class Runtime:
 
 
 def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict, result_dir: str, db_dir: str, data_dir: str):
-    logger.log_driver(f"Preparing {benchmark.fullname}")
+    log.driver(f"Preparing {benchmark.fullname}")
     dbms_descriptions = database_systems()
 
     timeout = definition.get("timeout", 0)
@@ -76,7 +77,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
         executed_queries[system.title] = set()
 
     if os.path.exists(result_csv) and benchmark_type == "queries":
-        logger.log_driver(f"Found results in {result_csv}, skipping already executed queries")
+        log.driver(f"Found results in {result_csv}, skipping already executed queries")
         with open(result_csv, 'r') as csv_file:
             reader = csv.DictReader(csv_file)
 
@@ -115,12 +116,12 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
         with open(result_csv + "_current", 'r') as file:
             title, query = file.read().strip().split("\n")
             failed_query = (title, query)
-            logger.log_driver(f"Last execution of {query} failed in {title}")
+            log.driver(f"Last execution of {query} failed in {title}")
 
     with ResultCSV(result_csv, append=True) as result_csv_file:
         for system in systems:
-            logger.log_header(system.title)
-            logger.log_driver(f"Running {system.title} on {benchmark.result_name} (dbms: {system.dbms}, params: {system.params}, settings: {system.settings})")
+            log.header(system.title)
+            log.driver(f"Running {system.title} on {benchmark.result_name} (dbms: {system.dbms}, params: {system.params}, settings: {system.settings})")
 
             # Prepare the benchmark
             match benchmark_type:
@@ -128,9 +129,9 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                     umbra_planner = system.params.get("umbra_planner", False)
                     dbms_name = "umbra" if umbra_planner else system.dbms
 
-                    logger.log_driver(f"Loading query names...")
+                    log.driver(f"Loading query names...")
                     query_names = benchmark.query_names()
-                    logger.log_driver(f"Found {len(query_names)} queries")
+                    log.driver(f"Found {len(query_names)} queries")
 
                     # Shuffle the queries
                     if query_seed is not None:
@@ -144,14 +145,14 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                     # Plan the queries with Umbra
                     # When planning is enabled, all planned queries are loaded into a list in memory for now
                     if umbra_planner and len(query_names) != 0:
-                        logger.log_driver("Using Umbra planner")
+                        log.driver("Using Umbra planner")
                         umbra_planner_params = system.params.get("umbra_planner_parameter", {})
                         umbra_planner_settings = system.params.get("umbra_planner_settings", {})
                         umbra_planned_queries = []
                         with dbms_descriptions["umbradev"].instantiate(benchmark, db_dir, data_dir, umbra_planner_params, umbra_planner_settings) as umbra:
                             umbra.load_database()
 
-                            with logger.LogProgress("Planning queries...", len(query_names)) as progress:
+                            with log.progress("Planning queries...", len(query_names)) as progress:
                                 for name in query_names:
                                     progress.next(f'Planning {name}...')
                                     query = benchmark.read_query(name, dbms_name)
@@ -159,7 +160,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                                     if umbra_query is not None:
                                         umbra_planned_queries.append((name, umbra_query))
                                     else:
-                                        logger.log_warn_verbose(f"Query {name} not supported by Umbra")
+                                        log.warn_verbose(f"Query {name} not supported by Umbra")
                                     progress.finish()
 
                     if len(query_names) == 0:
@@ -168,7 +169,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                         rgeomean = formatter.format_time(math.nan if len(runtime.times) == 0 else geometric_mean(runtime.times))
                         rmedian = formatter.format_time(math.nan if len(runtime.times) == 0 else median(runtime.times))
 
-                        logger.log_driver(
+                        log.driver(
                             f"total runtime {rsum} (geomean: {rgeomean}, median: {rmedian}) of {runtime.queries} queries (success: {runtime.success}, error: {runtime.error}, fatal: {runtime.fatal}, oom: {runtime.oom}, timeout: {runtime.timeout}, global timeout: {runtime.global_timeout})")
                         continue
 
@@ -176,7 +177,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                 dbms.load_database()
 
                 if benchmark_type == "queries":
-                    logger.log_driver("Benchmarking queries")
+                    log.driver("Benchmarking queries")
 
                     repetitions = definition["repetitions"]
                     warmup = definition["warmup"]
@@ -185,7 +186,7 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                     query_list = query_names if use_lazy else umbra_planned_queries
                     num_queries = len(query_list)
 
-                    with logger.LogProgress("Running queries...", num_queries * (repetitions + warmup), base=repetitions + warmup) as progress:
+                    with log.progress("Running queries...", num_queries * (repetitions + warmup), base=repetitions + warmup) as progress:
                         for item in query_list:
                             if use_lazy:
                                 name = item
@@ -260,18 +261,18 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                                 assert not math.isnan(med)
                                 runtimes[system.title].times.append(med)
 
-                            logger.log_verbose_dbms(f'{lname} {formatter.format_time(med)} {lmessage}', dbms)
+                            log.dbms_verbose(f'{lname} {formatter.format_time(med)} {lmessage}', dbms)
 
                     runtime = runtimes[system.title]
                     rsum = formatter.format_time(sum(runtime.times))
                     rgeomean = formatter.format_time(math.nan if len(runtime.times) == 0 else geometric_mean(runtime.times))
                     rmedian = formatter.format_time(math.nan if len(runtime.times) == 0 else median(runtime.times))
 
-                    logger.log_driver(
+                    log.driver(
                         f"total runtime {rsum} (geomean: {rgeomean}, median: {rmedian}) of {runtime.queries} queries (success: {runtime.success}, error: {runtime.error}, fatal: {runtime.fatal}, oom: {runtime.oom}, timeout: {runtime.timeout}, global timeout: {runtime.global_timeout})")
 
                 elif benchmark_type == "launch":
-                    logger.log_dbms(f"Connect to {system.title} using `{dbms.connection_string()}`", dbms)
+                    log.dbms(f"Connect to {system.title} using `{dbms.connection_string()}`", dbms)
                     input("Press Enter to continue...")
 
                 else:
@@ -292,10 +293,10 @@ def clear(benchmark: Benchmark, result_dir: str):
         except FileNotFoundError:
             pass
         except Exception as e:
-            logger.log_warn_verbose(f"Failed to delete {file_path}: {e}")
+            log.warn_verbose(f"Failed to delete {file_path}: {e}")
 
     result_name = os.path.join(result_dir, benchmark.result_name)
-    logger.log_driver(f"Clearing results for {result_name}")
+    log.driver(f"Clearing results for {result_name}")
 
     files_to_delete = [result_name + ext for ext in [".csv", ".csv_current"]]
     for file_path in files_to_delete:
@@ -308,8 +309,8 @@ def run_benchmarks(args):
     if args.env is not None:
         load_dotenv(dotenv_path=args.env, verbose=True)
 
-    logger.set_verbose(args.verbose)
-    logger.set_very_verbose(args.very_verbose)
+    log.set_verbose(args.verbose)
+    log.set_very_verbose(args.very_verbose)
 
     definition = schemajson.load(os.path.join(workdir, args.json), "benchmark.schema.json")
 
@@ -363,10 +364,10 @@ def run_benchmarks(args):
             continue
         base = next((x for x in systems if x.title == base_title), None)
         if base is None:
-            logger.log_warn(f"sample_base: '{base_title}' not found in systems list")
+            log.warn(f"sample_base: '{base_title}' not found in systems list")
             del s.params["sample_base"]
         elif base.dbms != "umbradev":
-            logger.log_warn(f"sample_base: '{base_title}' is not a umbradev system")
+            log.warn(f"sample_base: '{base_title}' is not a umbradev system")
             del s.params["sample_base"]
         else:
             s.params["sample_base"] = base.params
@@ -391,10 +392,10 @@ def run_benchmarks(args):
 
 
 def main():
-    logger.log_header("OLAPBench")
+    log.header("OLAPBench")
 
     if not os.getenv("VIRTUAL_ENV"):
-        logger.log_warn(f"Activate the venv first:\n   source {os.path.dirname(os.path.realpath(__file__))}/.venv/bin/activate")
+        log.warn(f"Activate the venv first:\n   source {os.path.dirname(os.path.realpath(__file__))}/.venv/bin/activate")
 
     parser = argparse.ArgumentParser(description="Run a benchmark")
     parser.add_argument("-j", "--json", dest="json", required=True, type=str, help="path to the benchmark's json definition")
@@ -416,5 +417,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logger.log_error(e)
+        log.error(e)
         raise e

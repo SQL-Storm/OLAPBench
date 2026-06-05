@@ -1,6 +1,7 @@
 import datetime
 import decimal
 from functools import cmp_to_key
+import math
 import os
 import re
 from typing import List
@@ -102,11 +103,19 @@ def compare_arrays(a: list[any], b: list[any]) -> int:
                 return cmp
             return 0
 
-        try:
-            cmp = (val1 > val2) - (val1 < val2)  # Standard comparison
-        except TypeError as e:
-            # Fallback to string comparison
-            cmp = (str(val1) > str(val2)) - (str(val1) < str(val2))
+        # Order numeric values (and numeric strings) numerically so that rows
+        # sort the same regardless of whether a system reports numbers as native
+        # numbers or as text; otherwise the two result sets misalign before the
+        # row-by-row comparison.
+        num1, num2 = as_number(val1), as_number(val2)
+        if num1 is not None and num2 is not None:
+            cmp = (num1 > num2) - (num1 < num2)
+        else:
+            try:
+                cmp = (val1 > val2) - (val1 < val2)  # Standard comparison
+            except TypeError as e:
+                # Fallback to string comparison
+                cmp = (str(val1) > str(val2)) - (str(val1) < str(val2))
         if cmp != 0:
             return cmp
 
@@ -126,6 +135,29 @@ def is_numeric(value: any) -> bool:
     return isinstance(value, (int, float, decimal.Decimal))
 
 
+_NUMERIC_STRING_RE = re.compile(r"^[+-]?\d+(\.\d+)?$")
+
+
+def as_number(value: any):
+    """Return value as a number if it is numeric or a plain numeric string, else None.
+
+    Systems serialize values differently: one may return a numeric column as a
+    native number while another (e.g. Umbra, which writes its results as text)
+    returns the same value as a string. Treating numeric strings as numbers lets
+    them compare and sort consistently across systems.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float, decimal.Decimal)):
+        return value
+    if isinstance(value, str) and _NUMERIC_STRING_RE.match(value.strip()):
+        try:
+            return decimal.Decimal(value.strip())
+        except decimal.InvalidOperation:
+            return None
+    return None
+
+
 def compare_values(val1: any, val2: any, ignore_decimal_points=False, ignore_microseconds=False) -> bool:
     """
     Compare two values, handling decimals and strings with tolerance/whitespace.
@@ -137,14 +169,18 @@ def compare_values(val1: any, val2: any, ignore_decimal_points=False, ignore_mic
     Returns:
         bool: True if values are considered equal, False otherwise.
     """
-    if is_numeric(val1) and is_numeric(val2):
-        return abs(val1 - val2) < 1e-4 or (ignore_decimal_points and int(val1) == int(val2))
-    elif isinstance(val1, str) and isinstance(val2, str):
+    # Compare numerically when at least one side is a real number (the other may
+    # be a numeric string from a system that serializes numbers as text). Use an
+    # absolute tolerance for small values and a relative tolerance for large ones,
+    # so floating point engines are not flagged as different from exact ones.
+    n1, n2 = as_number(val1), as_number(val2)
+    if n1 is not None and n2 is not None and (is_numeric(val1) or is_numeric(val2)):
+        return math.isclose(n1, n2, rel_tol=1e-6, abs_tol=1e-4) or (ignore_decimal_points and int(n1) == int(n2))
+    if isinstance(val1, str) and isinstance(val2, str):
         return val1.strip() == val2.strip()
-    elif isinstance(val1, datetime.datetime) and isinstance(val2, datetime.datetime):
+    if isinstance(val1, datetime.datetime) and isinstance(val2, datetime.datetime):
         return val1 == val2 or (ignore_microseconds and val1.replace(microsecond=0) == val2.replace(microsecond=0))
-    else:
-        return val1 == val2
+    return val1 == val2
 
 
 def parse_result(result: str) -> tuple[list[any], list[int]]:

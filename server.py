@@ -21,7 +21,8 @@ from flask_cors import CORS
 from benchmarks.benchmark import benchmark_arguments, benchmarks, Benchmark
 from dbms.dbms import Result, database_systems, DBMS
 from queryplan.queryplan import encode_query_plan
-from util import logger, schemajson, sql
+from util import schemajson, sql
+from util.log import log
 from util.template import Template, unfold
 
 workdir = os.getcwd()
@@ -46,10 +47,10 @@ def cleanup_dbms():
     with dbms_lock:
         for (dataset_name, title), dbms in active_dbms.items():
             try:
-                logger.log_driver(f"Shutting down {dataset_name}/{title}...")
+                log.driver(f"Shutting down {dataset_name}/{title}...")
                 dbms.__exit__(None, None, None)
             except Exception as e:
-                logger.log_error(f"Error shutting down {dataset_name}/{title}: {e}")
+                log.error(f"Error shutting down {dataset_name}/{title}: {e}")
         active_dbms.clear()
         dbms_locks.clear()
 
@@ -74,26 +75,26 @@ def restart_dbms(dataset_name: str, title: str) -> Optional[str]:
             try:
                 old_dbms.__exit__(None, None, None)
             except Exception as e:
-                logger.log_error(f"Error shutting down {dataset_name}/{title} during restart: {e}")
+                log.error(f"Error shutting down {dataset_name}/{title} during restart: {e}")
 
         # Re-instantiate
         dbms_descriptions = database_systems()
         dbms_name = config['dbms_name']
         try:
-            logger.log_driver(f"Restarting {dataset_name}/{title}...")
+            log.driver(f"Restarting {dataset_name}/{title}...")
             benchmark = benchmark_instances[dataset_name]
             dbms = dbms_descriptions[dbms_name].instantiate(
                 benchmark, config['db_dir'], config['data_dir'], config['params'], config['settings']
             )
             dbms.__enter__()
-            logger.log_driver(f"Loading database for {title}...")
+            log.driver(f"Loading database for {title}...")
             dbms.load_database()
             with dbms_lock:
                 active_dbms[key] = dbms
-            logger.log_driver(f"✓ {title} restarted successfully")
+            log.driver(f"✓ {title} restarted successfully")
             return None
         except Exception as e:
-            logger.log_error(f"Failed to restart {dataset_name}/{title}: {e}")
+            log.error(f"Failed to restart {dataset_name}/{title}: {e}")
             return str(e)
 
 
@@ -246,7 +247,7 @@ def execute_query():
         return jsonify(response)
 
     except Exception as e:
-        logger.log_error(f"Unexpected error executing query on {dataset_name}/{dbms_name}: {e}")
+        log.error(f"Unexpected error executing query on {dataset_name}/{dbms_name}: {e}")
         threading.Thread(target=restart_dbms, args=(dataset_name, dbms_name), daemon=True).start()
         return jsonify({'status': Result.FATAL, 'error': str(e), 'runtime_ms': None, 'server_time_ms': None})
 
@@ -312,7 +313,7 @@ def get_query_plan():
         return jsonify({'status': 'error', 'error': 'Query plan retrieval not supported for this DBMS'})
 
     except Exception as e:
-        logger.log_error(f"Error retrieving query plan on {dataset_name}/{dbms_name}: {e}")
+        log.error(f"Error retrieving query plan on {dataset_name}/{dbms_name}: {e}")
         return jsonify({'status': 'error', 'error': str(e)})
 
     finally:
@@ -386,7 +387,7 @@ def optimize():
             })
 
         except Exception as e:
-            logger.log_error(f"Error optimizing query: {e}")
+            log.error(f"Error optimizing query: {e}")
             return error(str(e), 500)
 
 
@@ -446,7 +447,7 @@ def get_dataset():
         })
 
     except Exception as e:
-        logger.log_error(f"Error retrieving dataset info for {dataset_name}: {e}")
+        log.error(f"Error retrieving dataset info for {dataset_name}: {e}")
         return error(str(e), 500)
 
 
@@ -465,7 +466,7 @@ def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir:
     dataset_name = benchmark.name
     dbms_descriptions = database_systems()
 
-    logger.log_driver(f"Preparing {benchmark.description}")
+    log.driver(f"Preparing {benchmark.description}")
     benchmark.dbgen()
 
     port_offset = len(active_dbms)
@@ -481,18 +482,18 @@ def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir:
             port_offset += 1
             params['host_port'] = host_port
 
-            logger.log_header(title)
-            logger.log_driver(f"Starting {title} (dataset: {dataset_name}, dbms: {dbms_name}, params: {params}, settings: {settings})")
+            log.header(title)
+            log.driver(f"Starting {title} (dataset: {dataset_name}, dbms: {dbms_name}, params: {params}, settings: {settings})")
 
             if dbms_name not in dbms_descriptions:
-                logger.log_error(f"Unknown DBMS: {dbms_name}")
+                log.error(f"Unknown DBMS: {dbms_name}")
                 continue
 
             try:
                 dbms = dbms_descriptions[dbms_name].instantiate(benchmark, db_dir, data_dir, params, settings)
                 dbms.__enter__()
 
-                logger.log_driver(f"Loading database for {title}...")
+                log.driver(f"Loading database for {title}...")
                 dbms.load_database()
 
                 active_dbms[(dataset_name, title)] = dbms
@@ -504,33 +505,33 @@ def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir:
                     'db_dir': db_dir,
                     'data_dir': data_dir,
                 }
-                logger.log_driver(f"✓ {title} is ready (port: {host_port})")
+                log.driver(f"✓ {title} is ready (port: {host_port})")
 
                 conn_str = dbms.connection_string()
                 if conn_str:
-                    logger.log_driver(f"  Connection: {conn_str}")
+                    log.driver(f"  Connection: {conn_str}")
 
             except Exception as e:
-                logger.log_error(f"Failed to start {title}: {e}")
+                log.error(f"Failed to start {title}: {e}")
                 raise
 
         # Determine optimizer DBMS for this dataset
         if optimizer_name:
             if (dataset_name, optimizer_name) not in active_dbms:
-                logger.log_error(f"Specified optimizer '{optimizer_name}' not found in active DBMS for dataset '{dataset_name}'")
+                log.error(f"Specified optimizer '{optimizer_name}' not found in active DBMS for dataset '{dataset_name}'")
             else:
                 optimizer_dbms_name[dataset_name] = optimizer_name
-                logger.log_driver(f"Using {optimizer_name} for query optimization on dataset '{dataset_name}'")
+                log.driver(f"Using {optimizer_name} for query optimization on dataset '{dataset_name}'")
         else:
             for (d, title), dbms in active_dbms.items():
                 if d == dataset_name and hasattr(dbms, 'plan_query'):
                     optimizer_dbms_name[dataset_name] = title
-                    logger.log_driver(f"Using {title} for query optimization on dataset '{dataset_name}' (auto-detected)")
+                    log.driver(f"Using {title} for query optimization on dataset '{dataset_name}' (auto-detected)")
                     break
 
             if dataset_name not in optimizer_dbms_name:
                 optimizer_dbms_name[dataset_name] = None
-                logger.log_driver(f"No Umbra/UmbraDev instance found for query optimization on dataset '{dataset_name}'")
+                log.driver(f"No Umbra/UmbraDev instance found for query optimization on dataset '{dataset_name}'")
 
 
 def parse_args():
@@ -636,29 +637,29 @@ def build_frontend():
     frontend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend')
     if not os.path.exists(os.path.join(frontend_dir, 'package.json')):
         return
-    logger.log_driver("Building frontend...")
+    log.driver("Building frontend...")
     subprocess.run(['npm', 'install', '--legacy-peer-deps'], cwd=frontend_dir, check=True)
     subprocess.run(['npm', 'run', 'build'], cwd=frontend_dir, check=True)
-    logger.log_driver("Frontend built.")
+    log.driver("Frontend built.")
 
 
 def main():
     """Main entry point."""
     args = parse_args()
 
-    logger.set_very_verbose(args.very_verbose)
-    logger.set_verbose(args.verbose)
+    log.set_very_verbose(args.very_verbose)
+    log.set_verbose(args.verbose)
 
     try:
         build_frontend()
     except Exception as e:
-        logger.log_error(f"Failed to build frontend: {e}")
+        log.error(f"Failed to build frontend: {e}")
         sys.exit(1)
 
     try:
         config = load_config(args.json)
     except Exception as e:
-        logger.log_error(f"Failed to load configuration: {e}")
+        log.error(f"Failed to load configuration: {e}")
         sys.exit(1)
 
     # Shared systems list — same for all datasets
@@ -667,7 +668,7 @@ def main():
 
     systems = _parse_systems(systems_config)
     if not systems:
-        logger.log_error("No systems configured")
+        log.error("No systems configured")
         sys.exit(1)
 
     # Collect benchmark configs. Priority:
@@ -683,7 +684,7 @@ def main():
     else:
         benchmark_config = config.get('benchmark', {})
         if not benchmark_config:
-            logger.log_error("Configuration must specify 'benchmark', 'datasets', or a CLI benchmark argument")
+            log.error("Configuration must specify 'benchmark', 'datasets', or a CLI benchmark argument")
             sys.exit(1)
         benchmark_configs = [benchmark_config]
 
@@ -693,7 +694,7 @@ def main():
         try:
             bench = _instantiate_benchmark(benchmark_config)
         except Exception as e:
-            logger.log_error(f"Failed to instantiate benchmark: {e}")
+            log.error(f"Failed to instantiate benchmark: {e}")
             cleanup_dbms()
             sys.exit(1)
 
@@ -702,7 +703,7 @@ def main():
         try:
             setup_dbms(bench, systems, args.db_dir, args.data_dir, args.base_port, optimizer_name)
         except Exception as e:
-            logger.log_error(f"Failed to set up DBMS instances for dataset '{bench.name}': {e}")
+            log.error(f"Failed to set up DBMS instances for dataset '{bench.name}': {e}")
             cleanup_dbms()
             sys.exit(1)
 
@@ -711,25 +712,25 @@ def main():
 
 def _start_server(args):
     """Log startup info and start the Flask server."""
-    logger.log_header("Server Ready")
-    logger.log_driver(f"HTTP server starting on {args.host}:{args.port}")
+    log.header("Server Ready")
+    log.driver(f"HTTP server starting on {args.host}:{args.port}")
     for dataset_name in benchmark_instances:
         systems = [title for (d, title) in active_dbms if d == dataset_name]
         opt = optimizer_dbms_name.get(dataset_name)
-        logger.log_driver(f"  [{dataset_name}] systems: {systems}" + (f", optimizer: {opt}" if opt else ""))
-    logger.log_driver("")
-    logger.log_driver("Endpoints:")
-    logger.log_driver("  GET  /health   - Health check")
-    logger.log_driver("  POST /dataset  - Schema and queries")
-    logger.log_driver("  POST /query    - Execute query")
-    logger.log_driver("  POST /plan     - Get query plan")
-    logger.log_driver("  POST /optimize - Optimize query using Umbra")
-    logger.log_driver("")
+        log.driver(f"  [{dataset_name}] systems: {systems}" + (f", optimizer: {opt}" if opt else ""))
+    log.driver("")
+    log.driver("Endpoints:")
+    log.driver("  GET  /health   - Health check")
+    log.driver("  POST /dataset  - Schema and queries")
+    log.driver("  POST /query    - Execute query")
+    log.driver("  POST /plan     - Get query plan")
+    log.driver("  POST /optimize - Optimize query using Umbra")
+    log.driver("")
 
     try:
         app.run(host=args.host, port=args.port, debug=False, use_reloader=False)
     except KeyboardInterrupt:
-        logger.log_driver("Shutting down...")
+        log.driver("Shutting down...")
     finally:
         cleanup_dbms()
 

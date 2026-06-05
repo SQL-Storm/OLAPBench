@@ -12,7 +12,8 @@ from dbms.dbms import DBMSDescription
 from dbms.postgres import Postgres
 from queryplan.parsers.umbraparser import UmbraParser
 from queryplan.queryplan import QueryPlan
-from util import sql, logger
+from util import sql
+from util.log import log
 
 
 class Umbra(Postgres):
@@ -106,7 +107,7 @@ class Umbra(Postgres):
             else:
                 env[k] = str(value)
 
-        logger.log_verbose_dbms(f"Umbra environment variables: {env}", self)
+        log.dbms_verbose(f"Umbra environment variables: {env}", self)
 
         return env
 
@@ -115,12 +116,12 @@ class Umbra(Postgres):
         if self._umbra_db is None:
             self.host_dir = tempfile.TemporaryDirectory(dir=self._db_dir)
             self.umbra_db_dir = self.host_dir.name
-            logger.log_verbose_dbms(f"Using a temporary umbra database in {self.umbra_db_dir}", self)
+            log.dbms_verbose(f"Using a temporary umbra database in {self.umbra_db_dir}", self)
         else:
             self.host_dir = None
             self.umbra_db_dir = os.path.join(self._db_dir, self._umbra_db, self.database_name)
             os.makedirs(self.umbra_db_dir, exist_ok=True)
-            logger.log_verbose_dbms(f"Using a persistent umbra database in {self.umbra_db_dir}", self)
+            log.dbms_verbose(f"Using a persistent umbra database in {self.umbra_db_dir}", self)
 
         self.db = os.path.join(self.umbra_db_dir, "umbra.db")
         self.db_exists = os.path.isfile(self.db)
@@ -153,10 +154,10 @@ class Umbra(Postgres):
 
     def load_database(self):
         if not self.db_exists:
-            logger.log_verbose_dbms("Loading umbra database " + self.db, self)
+            log.dbms_verbose("Loading umbra database " + self.db, self)
             super().load_database()
         else:
-            logger.log_verbose_dbms("Using existing umbra database " + self.db, self)
+            log.dbms_verbose("Using existing umbra database " + self.db, self)
 
     def plan_query(self, query: str, database: str) -> str:
         dialects = {

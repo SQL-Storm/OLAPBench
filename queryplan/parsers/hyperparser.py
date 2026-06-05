@@ -115,7 +115,8 @@ class HyperParser(PlanParser):
                 return Window(operator_id)
             case "explicitscan":
                 return PipelineBreakerScan(operator_id)
-            case "select":
+            case "select" | "filter":
+                # Hyper renamed the "select" operator to "filter" starting in 0.0.25080
                 return Select(operator_id)
             case "assertsingle":
                 return CustomOperator("AssertSingle", operator_id)

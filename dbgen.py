@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from benchmarks.benchmark import benchmarks
 from dbms.dbms import database_systems
-from util import logger
+from util.log import log
 
 
 workdir = os.getcwd()
@@ -40,14 +40,14 @@ def generate(args):
     if args.env is not None:
         load_dotenv(dotenv_path=args.env, verbose=True)
 
-    logger.set_verbose(args.verbose)
-    logger.set_very_verbose(args.very_verbose)
+    log.set_verbose(args.verbose)
+    log.set_very_verbose(args.very_verbose)
 
     data_dir = os.path.join(workdir, args.data)
     os.makedirs(data_dir, exist_ok=True)
 
     benchmark = benchmark_descriptions[args.benchmark].instantiate(data_dir, vars(args))
-    logger.log_driver(f"Generating data for {benchmark.fullname}")
+    log.driver(f"Generating data for {benchmark.fullname}")
     benchmark.dbgen()
 
     if args.umbradev:
@@ -58,16 +58,16 @@ def generate(args):
         settings = _parse_kv(args.setting)
 
         dbms_descriptions = database_systems()
-        logger.log_driver(f"Loading {benchmark.fullname} into umbradev (params: {params}, settings: {settings})")
+        log.driver(f"Loading {benchmark.fullname} into umbradev (params: {params}, settings: {settings})")
         with dbms_descriptions["umbradev"].instantiate(benchmark, db_dir, data_dir, params, settings) as dbms:
             dbms.load_database()
 
 
 def main():
-    logger.log_header("OLAPBench dbgen")
+    log.header("OLAPBench dbgen")
 
     if not os.getenv("VIRTUAL_ENV"):
-        logger.log_warn(f"Activate the venv first:\n   source {os.path.dirname(os.path.realpath(__file__))}/.venv/bin/activate")
+        log.warn(f"Activate the venv first:\n   source {os.path.dirname(os.path.realpath(__file__))}/.venv/bin/activate")
 
     parser = argparse.ArgumentParser(description="Generate data for a benchmark")
     parser.add_argument("-v", "--verbose", dest="verbose", default=False, action="store_true", help="verbose output")
@@ -94,5 +94,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logger.log_error(e)
+        log.error(e)
         raise e

@@ -14,7 +14,8 @@ from dbms.dbms import DBMS, Result
 from dbms.umbra import UmbraDescription, Umbra
 from queryplan.parsers.umbraparser import UmbraParser
 from queryplan.queryplan import QueryPlan
-from util import logger, sql
+from util import sql
+from util.log import log
 from util.process import Process
 
 
@@ -55,12 +56,12 @@ class UmbraDev(Umbra):
 
         # Prepare the sql binary
         if self._version == "HEAD":
-            logger.log_verbose_dbms(f"Using umbra sql binary from {self._bin_dir}", self)
+            log.dbms_verbose(f"Using umbra sql binary from {self._bin_dir}", self)
             self.sql = os.path.join(self._bin_dir, "sql")
 
         elif self._version == "latest" or re.match(r"\d{2}\.\d{2}(\.\d+)?", self._version):
             # Start Umbra in the docker container
-            logger.log_verbose_dbms(f"Using umbra sql binary from docker container {self.docker_image_name}", self)
+            log.dbms_verbose(f"Using umbra sql binary from docker container {self.docker_image_name}", self)
             env = " ".join([f"-e {key}={value}" for key, value in self.umbra_env().items()])
             self.sql = f"docker run --rm -i -v {self._umbra_db}:/var/db:rw -v {self._data_dir}:/data:ro --ulimit nofile=1048576:1048576 --ulimit memlock=8388608:8388608 --user {os.getuid()}:{os.getgid()} {env} {self.docker_image_name} umbra-sql"
             self._umbra_db_client = "/var/db"
@@ -76,11 +77,11 @@ class UmbraDev(Umbra):
 
             if os.path.isdir(self._bin_dir):
                 # Use the cached binary
-                logger.log_verbose_dbms(f"Using cached Umbra binary from {self._bin_dir}", self)
+                log.dbms_verbose(f"Using cached Umbra binary from {self._bin_dir}", self)
 
             elif self._version in self.prebuilt_versions:
                 # Download a prebuilt version
-                logger.log_verbose_dbms(f"Downloading prebuilt Umbra binary {self._version}", self)
+                log.dbms_verbose(f"Downloading prebuilt Umbra binary {self._version}", self)
 
                 with tempfile.TemporaryDirectory(dir=self._db_dir) as build_dir:
                     Process(f"curl -O https://db.in.tum.de/~schmidt/umbra-{self._version}.tar.xz", cwd=build_dir).run()
@@ -90,7 +91,7 @@ class UmbraDev(Umbra):
             else:
                 # Compile a git commit
                 self._version = Process(f'git rev-parse {self._version}', cwd=self._umbra_src).run().split('\n')[0]
-                logger.log_verbose_dbms(f"Compiling Umbra from source directory {self._umbra_src} at commit {self._version}", self)
+                log.dbms_verbose(f"Compiling Umbra from source directory {self._umbra_src} at commit {self._version}", self)
 
                 with tempfile.TemporaryDirectory(dir=self._db_dir) as build_dir:
                     Process(f'git clone -q {self._umbra_src} {build_dir}').run()
@@ -144,19 +145,19 @@ class UmbraDev(Umbra):
             if "execution:" in output and "compilation:" in output:
                 break
             elif output.startswith("ERROR:"):
-                logger.log_error_verbose(output)
+                log.error_verbose(output)
                 result.client_total.append(client_total)
                 result.message = output
                 result.state = Result.OOM if "unable to allocate memory" in output else Result.ERROR
                 return result
             elif output.startswith("WARNING: query") and "timed out after" in output:
-                logger.log_error_verbose(output)
+                log.error_verbose(output)
                 result.client_total.append(timeout * 1000)
                 result.message = output
                 result.state = Result.TIMEOUT
                 return result
             elif output:
-                logger.log_warn_verbose(output)
+                log.warn_verbose(output)
 
             output = None
 
@@ -241,7 +242,7 @@ class UmbraDev(Umbra):
         if not self.db_exists:
             # Create the database and ingest data, then stop so the sample files are flushed to disk.
             command = f'{self.sql} --createdb {self.db_client}'
-            logger.log_verbose_dbms(f"Starting umbra with a new database `{command}`", self)
+            log.dbms_verbose(f"Starting umbra with a new database `{command}`", self)
             self.process = Process(command, env=env)
             self.process.start()
             time.sleep(1)
@@ -254,7 +255,7 @@ class UmbraDev(Umbra):
 
         # (Re)open the now-existing database for the query workload.
         command = f'{self.sql} {self.db_client}'
-        logger.log_verbose_dbms(f"Starting umbra with an existing database `{command}`", self)
+        log.dbms_verbose(f"Starting umbra with an existing database `{command}`", self)
         self.process = Process(command, env=env)
         self.process.start()
         time.sleep(1)
@@ -279,7 +280,7 @@ class UmbraDev(Umbra):
 
         base_samples = glob.glob(base_prefix + "*.sample")
         if not base_samples:
-            logger.log_warn(f"sample_base: no .sample files found at {base_prefix}*.sample")
+            log.warn(f"sample_base: no .sample files found at {base_prefix}*.sample")
             return
 
         for old in glob.glob(target_prefix + "*.sample"):
@@ -289,7 +290,7 @@ class UmbraDev(Umbra):
         for src in base_samples:
             shutil.copy2(src, target_prefix + os.path.basename(src)[base_basename_len:])
 
-        logger.log_driver(f"sample_base: copied {len(base_samples)} .sample files from {base_prefix}* to {target_prefix}*")
+        log.driver(f"sample_base: copied {len(base_samples)} .sample files from {base_prefix}* to {target_prefix}*")
 
     def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> QueryPlan:
         result = self._execute(query="explain (format json, analyze) " + query.strip(), fetch_result=True, timeout=timeout).result

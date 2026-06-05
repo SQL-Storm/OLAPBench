@@ -1,3 +1,4 @@
+import os
 import tempfile
 
 from benchmarks.benchmark import Benchmark
@@ -19,6 +20,44 @@ class SingleStore(SQLServer):
     def docker_image_name(self) -> str:
         return "singlestore/cluster-in-a-box:latest"
 
+    def _image_file(self, path: str) -> str:
+        """Read a file from the image so we can extend it for the host user."""
+        output = self._docker.containers.run(self.docker_image_name, entrypoint="cat", command=[path], remove=True)
+        return output.decode()
+
+    def _write_memsql_config(self) -> dict:
+        """memsqlctl refuses to run unless the process user matches its config.
+
+        The harness runs the container under the host UID/GID, which does not
+        exist inside the image, so memsqlctl aborts. Provide a config without the
+        "user" restriction plus passwd/group entries that map the host UID/GID to
+        a name, and bind-mount them over the image's versions.
+        """
+        uid, gid = os.getuid(), os.getgid()
+        self.config_dir = tempfile.TemporaryDirectory(dir=self._db_dir)
+
+        hcl_path = os.path.join(self.config_dir.name, "memsqlctl.hcl")
+        with open(hcl_path, "w") as f:
+            f.write('version = 1\n')
+            f.write('nodeMetadataFile = "/var/lib/memsql/nodes.hcl"\n')
+            f.write('defaultInstallDir = "/var/lib/memsql"\n')
+
+        passwd_path = os.path.join(self.config_dir.name, "passwd")
+        with open(passwd_path, "w") as f:
+            f.write(self._image_file("/etc/passwd"))
+            f.write(f"local:x:{uid}:{gid}::/var/lib/memsql:/bin/sh\n")
+
+        group_path = os.path.join(self.config_dir.name, "group")
+        with open(group_path, "w") as f:
+            f.write(self._image_file("/etc/group"))
+            f.write(f"local:x:{gid}:\n")
+
+        return {
+            hcl_path: {"bind": "/etc/memsql/memsqlctl.hcl", "mode": "ro"},
+            passwd_path: {"bind": "/etc/passwd", "mode": "ro"},
+            group_path: {"bind": "/etc/group", "mode": "ro"},
+        }
+
     def __enter__(self):
         # prepare database directories
         self.host_dir = tempfile.TemporaryDirectory(dir=self._db_dir)
@@ -30,17 +69,20 @@ class SingleStore(SQLServer):
             "LICENSE_KEY": "BGFlODdhMGI4MTkyZDQzMjk5MjI2ZDEzYzAyMmEzY2IzjlxuZwAAAAAAAAAAAAAAAAkwNAIYLfSh1I1PbuEfRtEPWxLwdyKwQMZIGJUlAhgSLR+GTxtuGUSCuGxUab43dWJsHnmTMn4AAA=="
         }
         docker_params = {
-            "command": ["/bin/sh", "-c", "ls -al /etc/memsql/memsqlctl.hcl && sed -i 's/user = \"memsql\"/user = \"local\"/' /etc/memsql/memsqlctl.hcl && /startup"]
+            "volumes": self._write_memsql_config()
         }
         self._host_port = self._host_port if self._host_port is not None else 33061
         self._start_container(singlestore_environment, 3306, self._host_port, self.host_dir.name, "/var/lib/memsql", docker_params=docker_params)
         self._connect(f"DRIVER={{MariaDB}};SERVER=127.0.0.1;PORT={self._host_port};TrustServerCertificate=yes;UID=root;PWD=SingleStore;OPTION=" + str(67108864 + 1048576))
 
-        self.cursor.execute("CREATE DATABASE benchy;")
-        self.cursor.close()
+        cursor = self.connection.cursor()
+        cursor.execute("CREATE DATABASE benchy;")
+        cursor.close()
 
         self._connect(f"DRIVER={{MariaDB}};SERVER=127.0.0.1;PORT={self._host_port};DATABASE=benchy;TrustServerCertificate=yes;UID=root;PWD=SingleStore;OPTION=" + str(67108864 + 1048576))
-        self.cursor.execute("SET sql_mode = 'ANSI_QUOTES';")
+        cursor = self.connection.cursor()
+        cursor.execute("SET sql_mode = 'ANSI_QUOTES';")
+        cursor.close()
 
         return self
 
@@ -48,6 +90,7 @@ class SingleStore(SQLServer):
         self.connection.close()
         self._close_container()
         self.host_dir.cleanup()
+        self.config_dir.cleanup()
 
     def _transform_schema(self, schema: dict) -> dict:
         schema = sql.transform_schema(schema, escape='"', lowercase=self._umbra_planner)

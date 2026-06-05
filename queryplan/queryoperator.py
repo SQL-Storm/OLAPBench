@@ -1,7 +1,7 @@
 from abc import ABC
 from enum import Enum
 
-from util.logger import log_warn
+from util.log import log
 
 
 class DBMSType(int, Enum):
@@ -83,7 +83,7 @@ class TableScan(QueryOperator):
                     self.table_name = plan["Relation Name"]
                     self.type = "index"
                 case _:
-                    log_warn(f"Unknown table scan type: {plan['Node Type']}")
+                    log.warn(f"Unknown table scan type: {plan['Node Type']}")
         elif dbms_type == DBMSType.DuckDB:
             table_name = plan["extra_info"]["Table"] if "Table" in plan["extra_info"] else None
             self.table_name = table_name

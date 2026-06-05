@@ -10,7 +10,8 @@ from benchmarks.benchmark import Benchmark
 from dbms.dbms import DBMS, Result, DBMSDescription
 from queryplan.parsers.duckdbparser import DuckDBParser
 from queryplan.queryplan import QueryPlan
-from util import logger, sql
+from util import sql
+from util.log import log
 
 duck = None
 
@@ -86,7 +87,7 @@ class DuckDB(DBMS):
             self._kill_container()
             raise Exception(f"Unable to connect to {self.name}")
 
-        logger.log_verbose_dbms(f"Established connection to {self.name}", self)
+        log.dbms_verbose(f"Established connection to {self.name}", self)
 
     def __enter__(self):
         # prepare database directory
@@ -112,13 +113,13 @@ class DuckDB(DBMS):
         # Build the docker image
         version = self._version if self._version != "latest" else self.versions[-1]
         tag = f"sqlstorm/duckdb:{version}"
-        logger.log_dbms(f"Building {tag} docker image", self)
+        log.dbms(f"Building {tag} docker image", self)
         try:
             image = self._docker.images.build(path=os.path.join(os.path.dirname(__file__), "..", "docker", "duckdb"), tag=tag, buildargs={'VERSION': version}, rm=True)[0]
-            logger.log_dbms(f"Built {tag} docker image", self)
+            log.dbms(f"Built {tag} docker image", self)
             return image
         except Exception as e:
-            logger.log_dbms(f"Could not build {tag} docker image: {e}", self)
+            log.dbms(f"Could not build {tag} docker image: {e}", self)
             raise Exception(f"Could not build {tag} docker image")
 
     def _create_table_statements(self, schema: dict) -> list[str]:
@@ -152,7 +153,7 @@ class DuckDB(DBMS):
 
         payload = response.json()
         if payload.get("error"):
-            logger.log_error_verbose(payload.get("error"))
+            log.error_verbose(payload.get("error"))
             output.message = payload.get("error")
             output.state = Result.TIMEOUT if "INTERRUPT Error: Interrupted!" in output.message or "canceled Context" in output.message else Result.ERROR
             output.state = Result.OOM if "Cannot allocate" in output.message else output.state

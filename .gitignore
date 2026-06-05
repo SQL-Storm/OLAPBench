@@ -3,8 +3,9 @@
 .idea/
 __pycache__/
 
-db/
-data/
+db
+data
+bin
 
 **/*_sqlstorm_*
 test/**/*.csv

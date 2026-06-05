@@ -11,7 +11,8 @@ from benchmarks.benchmark import Benchmark
 from dbms.dbms import DBMS, DBMSDescription, Result
 from queryplan.parsers.sqlserverparser import SQLServerParser
 from queryplan.queryplan import encode_query_plan
-from util import sql, logger
+from util import sql
+from util.log import log
 
 
 class SQLServer(DBMS):
@@ -35,6 +36,7 @@ class SQLServer(DBMS):
 
     def _connect(self, connection: str):
         self.connection = None
+        last_error = None
         start_time = time.time()
         check_timeout = 120  # 2 minutes
         while time.time() - start_time < check_timeout:
@@ -45,17 +47,20 @@ class SQLServer(DBMS):
                 self.connection.setdecoding(pyodbc.SQL_WCHAR, encoding='utf8')
 
                 break
-            except pyodbc.OperationalError as e:
-                time.sleep(1)  # 1 second
-            except pyodbc.InterfaceError as e:
+            # The server may still be starting up inside the container. The MariaDB
+            # driver (SingleStore) reports this as a plain pyodbc.Error (HY000,
+            # "Can't connect to server"), not Operational/InterfaceError, so catch
+            # the base class to keep retrying until the timeout.
+            except pyodbc.Error as e:
+                last_error = e
                 time.sleep(1)  # 1 second
 
         if self.connection is None:
-            raise Exception("could not connect to sqlserver")
+            raise Exception(f"could not connect to {self.name}: {last_error}")
 
         self._connection_string = connection
 
-        logger.log_verbose_dbms(f"Established connection to {self.name}", self)
+        log.dbms_verbose(f"Established connection to {self.name}", self)
 
     def __enter__(self):
         # prepare database directories
@@ -86,7 +91,7 @@ class SQLServer(DBMS):
                 cursor.execute("RECONFIGURE WITH OVERRIDE")
                 cursor.execute("SET STATISTICS TIME ON;")
 
-            logger.log_verbose_dbms(f"Prepared sqlserver database", self)
+            log.dbms_verbose(f"Prepared sqlserver database", self)
 
             return self
         except Exception as e:
@@ -179,7 +184,7 @@ class SQLServer(DBMS):
 
             if "TCP Provider: Error code 0x2714" in str(e):
                 # Connection lost, reconnect and try again
-                logger.log_warn(f"Lost connection to {self.name}, reconnecting...")
+                log.warn(f"Lost connection to {self.name}, reconnecting...")
                 self.connection.close()
                 self._connect(self._connection_string)
                 return self._execute(query, fetch_result, timeout, fetch_result_limit)
@@ -190,7 +195,7 @@ class SQLServer(DBMS):
                     or "The connection is broken and recovery is not possible" in str(e):
                 raise e
 
-            logger.log_error_verbose(str(e))
+            log.error_verbose(str(e))
             result.message = str(e)
             result.state = Result.TIMEOUT if "Query execution was interrupted" in result.message or "Operation canceled" in result.message else Result.ERROR
             result.client_total.append(timeout * 1000 if result.state == Result.TIMEOUT else client_total * 1000)
@@ -253,7 +258,7 @@ class SQLServer(DBMS):
             except Exception:
                 pass
             print(traceback.format_exc())
-            logger.log_error_verbose(f"Failed to retrieve SQL Server plan: {e}")
+            log.error_verbose(f"Failed to retrieve SQL Server plan: {e}")
             return None
 
     def load_database(self):

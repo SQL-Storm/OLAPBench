@@ -9,7 +9,8 @@ import pymonetdb
 from benchmarks.benchmark import Benchmark
 from dbms.dbms import DBMS, Result
 from dbms.dbms import DBMSDescription
-from util import sql, logger
+from util import sql
+from util.log import log
 
 
 class MonetDB(DBMS):
@@ -102,7 +103,7 @@ class MonetDB(DBMS):
         try:
             self.cursor.execute(query)
         except Exception as e:
-            logger.log_error_verbose(str(e))
+            log.error_verbose(str(e))
             result.message = str(e)
             result.state = Result.TIMEOUT if "HYT00!Query aborted due to timeout" in result.message else Result.ERROR
             result.client_total.append(timeout * 1000 if result.state == Result.TIMEOUT else client_total * 1000)

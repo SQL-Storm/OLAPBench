@@ -10,7 +10,8 @@ from benchmarks.benchmark import Benchmark
 from dbms.dbms import DBMS, Result, DBMSDescription
 from queryplan.parsers.clickhouseparser import ClickHouseParser
 from queryplan.queryplan import encode_query_plan
-from util import formatter, logger, process, sql
+from util import formatter, process, sql
+from util.log import log
 
 
 class ClickHouse(DBMS):
@@ -54,7 +55,7 @@ class ClickHouse(DBMS):
         self._host_port = self._host_port if self._host_port is not None else 54325
         self._start_container(clickhouse_environment, 8123, self._host_port, self.host_dir.name, "/var/lib/clickhouse/", docker_params=docker_params)
 
-        logger.log_verbose_dbms(f"Connecting to {self.name}...", self)
+        log.dbms_verbose(f"Connecting to {self.name}...", self)
         time.sleep(5)
 
         start_time = time.time()
@@ -82,7 +83,7 @@ class ClickHouse(DBMS):
         if self._client is None:
             raise Exception(f"Unable to connect to {self.name}")
 
-        logger.log_verbose_dbms(f"Established connection to {self.name}", self)
+        log.dbms_verbose(f"Established connection to {self.name}", self)
 
         return self
 
@@ -114,7 +115,7 @@ class ClickHouse(DBMS):
         if schema['delimiter'] != '\t':
             settings['format_csv_delimiter'] = schema['delimiter']
 
-        with logger.LogProgress("Loading tables...", len(schema["tables"])) as progress:
+        with log.progress("Loading tables...", len(schema["tables"])) as progress:
             for table in schema["tables"]:
                 progress.next(f'Loading {table["name"]}...')
                 begin = time.time()
@@ -140,14 +141,24 @@ class ClickHouse(DBMS):
 
                         self._execute_in_container(f'bash -c "clickhouse-client --time --format="Null" -d clickhouse --password clickhouse --queries-file=/tmp/query.sql"')
                     except Exception as e:
-                        logger.log_error(f'Error while loading table: {str(e)}')
+                        log.error(f'Error while loading table: {str(e)}')
                         raise Exception(f'Error while loading table: {str(e)}')
                 total = time.time() - begin
 
-                logger.log_verbose_dbms(f'Loaded {table["name"]} in {formatter.format_time(total)}', self)
+                log.dbms_verbose(f'Loaded {table["name"]} in {formatter.format_time(total)}', self)
                 progress.finish()
 
         return []
+
+    def _supports_query_condition_cache(self) -> bool:
+        # use_query_condition_cache was introduced in ClickHouse 25.3
+        if self._version == "latest":
+            return True
+        try:
+            major, minor = (int(part) for part in self._version.split(".")[:2])
+        except ValueError:
+            return False
+        return (major, minor) >= (25, 3)
 
     def _execute(self, query: str, fetch_result: bool, timeout: int = 0, fetch_result_limit: int = 0) -> Result:
         result = Result()
@@ -156,8 +167,9 @@ class ClickHouse(DBMS):
         settings['allow_experimental_join_condition'] = 1
         settings['allow_experimental_analyzer'] = 1
         settings['use_query_cache'] = 0
-        settings['use_query_condition_cache'] = 0
-        
+        if self._supports_query_condition_cache():
+            settings['use_query_condition_cache'] = 0
+
         settings['aggregate_functions_null_for_empty'] = 1
         settings['union_default_mode'] = 'DISTINCT'
         settings['data_type_default_nullable'] = 1
@@ -215,7 +227,7 @@ class ClickHouse(DBMS):
     def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0):
         result = self._execute(query="explain json=1, actions=1 " + query.strip(), fetch_result=True, timeout=timeout).result
         if not result or not result[0]:
-            logger.log_warn("Could not retrieve query plan")
+            log.warn("Could not retrieve query plan")
         text_plan = result[0][0]
         json_plan = json.loads(text_plan, allow_nan=True)[0]
         plan_parser = ClickHouseParser(include_system_representation=include_system_representation)

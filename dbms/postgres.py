@@ -8,7 +8,8 @@ from benchmarks.benchmark import Benchmark
 from dbms.dbms import DBMS, Result, DBMSDescription
 from queryplan.parsers.postgresparser import PostgresParser
 from queryplan.queryplan import QueryPlan
-from util import sql, logger
+from util import sql
+from util.log import log
 
 
 class Postgres(DBMS):
@@ -47,7 +48,7 @@ class Postgres(DBMS):
         self.connection.set_client_encoding('utf-8')
         self.cursor = self.connection.cursor()
 
-        logger.log_verbose_dbms(f"Established connection to {self.name}", self)
+        log.dbms_verbose(f"Established connection to {self.name}", self)
 
     def _write_config_file(self, file):
         def config(param, value):
@@ -169,7 +170,7 @@ class Postgres(DBMS):
             if self.connection.closed:
                 raise e
 
-            logger.log_error_verbose(str(e))
+            log.error_verbose(str(e))
             result.message = str(e)
             result.state = Result.ERROR
             result.state = Result.TIMEOUT if "canceled" in result.message or "canceling statement due to user request" in result.message else result.state

@@ -4,13 +4,13 @@ import sys
 import numa
 import psutil
 
-from util import logger
+from util.log import log
 
 
 def set_node(numa_node: int | None):
     if numa_node is not None:
         if numa_node > numa.info.get_max_node():
-            logger.log_error("value for --numa-node (%d) exceeds maximum number of available nodes in this system (%d)" % (numa_node, numa.info.get_max_node() + 1))
+            log.error("value for --numa-node (%d) exceeds maximum number of available nodes in this system (%d)" % (numa_node, numa.info.get_max_node() + 1))
             sys.exit(1)
 
             # bind the Python process itself, so that non-Dockerized systems are affected

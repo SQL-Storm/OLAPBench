@@ -25,8 +25,13 @@ class Log:
             super().__init__(table_column=None)
 
         def render(self, task: "Task") -> Text:
-            completed = int(task.completed)
-            total = int(task.total) if task.total is not None else "?"
+            base = task.fields.get("base", 1)
+            completed = int(task.completed / base) + 1
+            if task.total is not None:
+                total = int(task.total / base)
+                completed = min(completed, total)  # never display more than the total
+            else:
+                total = "?"
             total_width = len(str(total))
             return Text(f"[{completed:{total_width}d}/{total}]", style="progress.download")
 
@@ -72,6 +77,9 @@ class Log:
         self._start_progress()
 
     def cleanup(self):
+        # Stop the (transient) live progress so its last frame is cleared on exit.
+        if self._progress is not None:
+            self._progress.stop()
         self.console.show_cursor()
 
     def set_verbose(self, enable: bool):
@@ -196,6 +204,46 @@ class Log:
         if self.verbose:
             self.info(info, group=group)
 
+    def driver(self, info: Any):
+        """
+        Logs a driver message (tagged DRIVER).
+        """
+        self.log(info, "driver", "green")
+
+    def driver_verbose(self, info: Any):
+        """
+        Logs a driver message if verbose mode is enabled.
+        """
+        if self.verbose:
+            self.driver(info)
+
+    def benchmark_verbose(self, info: Any, benchmark):
+        """
+        Logs a benchmark-tagged message if verbose mode is enabled.
+        """
+        if self.verbose:
+            self.log(info, benchmark.name, "bright_red")
+
+    def dbms(self, info: Any, dbms):
+        """
+        Logs a message tagged with the name of the given DBMS.
+        """
+        self.log(info, dbms.name, "yellow")
+
+    def dbms_verbose(self, info: Any, dbms):
+        """
+        Logs a DBMS-tagged message if verbose mode is enabled.
+        """
+        if self.verbose:
+            self.dbms(info, dbms)
+
+    def dbms_very_verbose(self, info: Any, dbms):
+        """
+        Logs a DBMS-tagged message if very verbose mode is enabled.
+        """
+        if self.very_verbose:
+            self.dbms(info, dbms)
+
     def sql_verbose(self, info: str):
         """
         Logs an SQL message if very verbose mode is enabled.
@@ -280,7 +328,7 @@ class Log:
             """
             Starts the progress logging.
             """
-            self.task = self._log._progress.add_task(self._info, total=self._total)
+            self.task = self._log._progress.add_task(self._info, total=self._total, base=self._base)
             return self
 
         def __exit__(self, exc_type, exc_val, exc_tb):
@@ -298,9 +346,24 @@ class Log:
             """
             self._log._progress.update(self.task, description=info)
 
+        def next(self, info: str):
+            """
+            Updates the description of the progress task (alias for description).
+
+            Args:
+                info (str): The new description.
+            """
+            self._log._progress.update(self.task, description=info)
+
         def advance(self):
             """
             Advances the progress task by one step.
+            """
+            self._log._progress.update(self.task, advance=1)
+
+        def finish(self):
+            """
+            Advances the progress task by one step (alias for advance).
             """
             self._log._progress.update(self.task, advance=1)
 
@@ -313,7 +376,7 @@ class Log:
             """
             self._log._progress.update(self.task, completed=completed)
 
-    def progress(self, info: str, total: int) -> LogProgress:
+    def progress(self, info: str, total: int, base: int = 1) -> LogProgress:
         """
         Creates a progress logging context manager.
 
@@ -325,7 +388,7 @@ class Log:
         Returns:
             LogProgress: The LogProgress instance.
         """
-        return self.LogProgress(self, info, total)
+        return self.LogProgress(self, info, total, base)
 
     class LogFile:
         """

@@ -9,7 +9,7 @@ MCVP=${4:-medium}
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PROD_DS_DIR="$REPO_ROOT/benchmarks/prodds/prod-ds"
 OUT_REL="prodds/sf${SF}_str${STR}_null${NULLP}_mcv${MCVP}"
-OUT_ABS="$REPO_ROOT/data/$OUT_REL"
+OUT_ABS="$(pwd)/data/$OUT_REL"
 
 echo "Generating Prod-DS dataset: SF=$SF STR=$STR NULL=$NULLP MCV=$MCVP -> $OUT_REL"
 

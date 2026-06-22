@@ -1,16 +1,18 @@
-title: Postgres
+title: ClickHouse
 repetitions: 5
 warmup: 3
 timeout: 60
 global_timeout: 0
 fetch_result: true
+output: results/querybrew/clickhouse/
 query_plan:
   retrieve: true
   system_representation: true
-output: results/querypotter/postgres/
 parameter:
-  version: "18"
+  version: "25.11"
   umbra_planner: false
+  cpus: 16
+  memory: "32G"
   umbra_planner_settings:
     usedirectio: true
     multiway: d
@@ -18,27 +20,26 @@ parameter:
   umbra_planner_parameter:
     version: "26.01"
 systems:
-  - title: Postgres
-    dbms: postgres
+  - title: ClickHouse
+    dbms: clickhouse
     disabled: false
-  - title: Postgres (Umbra Planner)
-    dbms: postgres
+  - title: ClickHouse (Umbra Planner)
+    dbms: clickhouse
     disabled: false
     parameter:
       umbra_planner: true
-  - title: Postgres (Umbra Planner, no join optimizer)
-    dbms: postgres
+  - title: ClickHouse (Umbra Planner, no join optimizer)
+    dbms: clickhouse
     disabled: false
     settings:
-      join_collapse_limit: 1
-      from_collapse_limit: 1
+      query_plan_optimize_join_order_limit: 1
     parameter:
       umbra_planner: true
 benchmarks:
   - name: tpch
-    scale: 100
+    scale: 10
   - name: tpcds
-    scale: 100
+    scale: 10
   - name: ssb
-    scale: 100
+    scale: 10
   - name: job

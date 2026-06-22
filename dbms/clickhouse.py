@@ -48,7 +48,7 @@ class ClickHouse(DBMS):
         }
         docker_params = {
             "name": self.container_name,
-            "shm_size": "%d" % self._buffer_size,
+            "shm_size": "%d" % self._memory,
             "stdin_open": True,
         }
         # Expose HTTP port (8123 in container) to host port (from params or default 54325)

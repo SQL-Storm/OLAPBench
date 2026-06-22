@@ -58,10 +58,10 @@ class Postgres(DBMS):
         config("listen_addresses", "*")
 
         # configure memory usage
-        config("shared_buffers", "%dB" % self._buffer_size)
-        config("work_mem", "%dB" % (self._buffer_size / self._worker_threads))  # emulate Umbra behavior here
-        config("autovacuum_work_mem", "%dB" % (self._buffer_size / self._worker_threads))  # emulate Umbra behavior here
-        config("maintenance_work_mem", "%dB" % (self._buffer_size / self._worker_threads))  # emulate Umbra behavior here
+        config("shared_buffers", "%dB" % self._memory)
+        config("work_mem", "%dB" % (self._memory / self._cpus))  # emulate Umbra behavior here
+        config("autovacuum_work_mem", "%dB" % (self._memory / self._cpus))  # emulate Umbra behavior here
+        config("maintenance_work_mem", "%dB" % (self._memory / self._cpus))  # emulate Umbra behavior here
 
         # configure WAL behavior
         config("wal_level", "replica")
@@ -72,13 +72,13 @@ class Postgres(DBMS):
         config("checkpoint_timeout", "1h")
         config("checkpoint_completion_target", "0.9")
         config("min_wal_size", "1GB")
-        config("max_wal_size", "%dB" % self._buffer_size)  # emulate Umbra behavior here
+        config("max_wal_size", "%dB" % self._memory)  # emulate Umbra behavior here
 
         # configure parallelization
-        config("max_worker_processes", "%d" % self._worker_threads)
-        config("max_parallel_workers_per_gather", "%d" % self._worker_threads)
-        config("max_parallel_maintenance_workers", "%d" % self._worker_threads)
-        config("max_parallel_workers", "%d" % self._worker_threads)
+        config("max_worker_processes", "%d" % self._cpus)
+        config("max_parallel_workers_per_gather", "%d" % self._cpus)
+        config("max_parallel_maintenance_workers", "%d" % self._cpus)
+        config("max_parallel_workers", "%d" % self._cpus)
         config("parallel_setup_cost", "0")
         config("parallel_tuple_cost", "0")
 
@@ -108,7 +108,7 @@ class Postgres(DBMS):
             'LC_CTYPE': 'C',
         }
         docker_params = {
-            "shm_size": "%d" % self._buffer_size,
+            "shm_size": "%d" % self._memory,
             "command": "postgres -c config_file=/db/postgres.conf",
         }
         self._host_port = self._host_port if self._host_port is not None else 54321

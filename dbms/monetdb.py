@@ -78,8 +78,8 @@ class MonetDB(DBMS):
         self.cursor = self.connection.cursor()
 
         # configure the session
-        self.cursor.execute("call sys.setmemorylimit(%d)" % (self._buffer_size // (1024 * 1024)))
-        self.cursor.execute("call sys.setworkerlimit(%d)" % self._worker_threads)
+        self.cursor.execute("call sys.setmemorylimit(%d)" % (self._memory // (1024 * 1024)))
+        self.cursor.execute("call sys.setworkerlimit(%d)" % self._cpus)
 
         return self
 

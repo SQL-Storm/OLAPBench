@@ -1,4 +1,4 @@
-title: DuckDB
+title: SQLServer
 repetitions: 5
 warmup: 3
 timeout: 60
@@ -7,10 +7,12 @@ fetch_result: true
 query_plan:
   retrieve: true
   system_representation: true
-output: results/querypotter/duckdb/
+output: results/querybrew/sqlserver/
 parameter:
-  version: "1.4.3"
+  version: "2025-latest"
   umbra_planner: false
+  cpus: 16
+  memory: "32G"
   umbra_planner_settings:
     usedirectio: true
     multiway: d
@@ -18,26 +20,25 @@ parameter:
   umbra_planner_parameter:
     version: "26.01"
 systems:
-  - title: DuckDB
-    dbms: duckdb
+  - title: SQLServer
+    dbms: sqlserver
     disabled: false
-  - title: DuckDB (Umbra Planner)
-    dbms: duckdb
+  - title: SQLServer (Umbra Planner)
+    dbms: sqlserver
     disabled: false
     parameter:
       umbra_planner: true
-  - title: DuckDB (Umbra Planner, no join optimizer)
-    dbms: duckdb
+  - title: SQLServer (Umbra Planner, no join optimizer)
+    dbms: sqlserver
     disabled: false
-    settings:
-      disabled_optimizers: "join_order,build_side_probe_side"
     parameter:
       umbra_planner: true
+      force_order: true
 benchmarks:
   - name: tpch
-    scale: 100
+    scale: 10
   - name: tpcds
-    scale: 100
+    scale: 10
   - name: ssb
-    scale: 100
+    scale: 10
   - name: job

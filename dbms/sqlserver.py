@@ -74,7 +74,7 @@ class SQLServer(DBMS):
                 "MSSQL_COLLATION": "Latin1_General_100_BIN2_UTF8",
             }
             docker_params = {
-                "shm_size": "%d" % self._buffer_size,
+                "shm_size": "%d" % self._memory,
             }
             self._host_port = self._host_port if self._host_port is not None else 14331
             self._start_container(sqlserver_environment, 1433, self._host_port, self.host_dir.name, "/var/opt/mssql", docker_params=docker_params)
@@ -85,8 +85,8 @@ class SQLServer(DBMS):
             with self.connection.cursor() as cursor:
                 cursor.execute("EXEC sp_configure 'show advanced options', '1'")
                 cursor.execute("RECONFIGURE WITH OVERRIDE")
-                cursor.execute("EXEC sp_configure 'max server memory', %d" % (self._buffer_size // 1024))
-                cursor.execute("EXEC sp_configure 'max degree of parallelism', '%d'" % self._worker_threads)
+                cursor.execute("EXEC sp_configure 'max server memory', %d" % (self._memory // 1024))
+                cursor.execute("EXEC sp_configure 'max degree of parallelism', '%d'" % self._cpus)
                 cursor.execute("EXEC sp_configure 'default trace enabled', 0")
                 cursor.execute("RECONFIGURE WITH OVERRIDE")
                 cursor.execute("SET STATISTICS TIME ON;")

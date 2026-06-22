@@ -2,11 +2,11 @@ optimizer: Umbra
 
 datasets:
   - name: tpch
-    scale: 1
+    scale: 10
   - name: tpcds
-    scale: 1
+    scale: 10
   - name: ssb
-    scale: 1
+    scale: 10
   - name: job
 
 systems:
@@ -15,17 +15,25 @@ systems:
     disabled: false
     parameter:
       version: "26.01"
-    settings: 
+      cpus: 16
+      memory: "32G"
+    settings:
       optimizer.sidewayinformationpassing: false
       multiway: d
 
   - title: DuckDB
     dbms: duckdb
     disabled: false
+    parameter:
+      cpus: 16
+      memory: "32G"
 
   - title: DuckDB (no join optimizer)
     dbms: duckdb
     disabled: false
+    parameter:
+      cpus: 16
+      memory: "32G"
     settings:
       disabled_optimizers: "join_order,build_side_probe_side"
 
@@ -34,12 +42,16 @@ systems:
     disabled: false
     parameter:
       version: "25.11"
+      cpus: 16
+      memory: "32G"
 
   - title: ClickHouse (no join optimizer)
     dbms: clickhouse
     disabled: false
     parameter:
       version: "25.11"
+      cpus: 16
+      memory: "32G"
     settings:
       query_plan_optimize_join_order_limit: 1
 
@@ -48,6 +60,8 @@ systems:
     disabled: false
     parameter:
       version: "2025-latest"
+      cpus: 16
+      memory: "32G"
 
   - title: SQLServer (no join optimizer)
     dbms: sqlserver
@@ -55,12 +69,16 @@ systems:
     parameter:
       version: "2025-latest"
       force_order: true
+      cpus: 16
+      memory: "32G"
 
   - title: Postgres
     dbms: postgres
     disabled: false
     parameter:
       version: "18"
+      cpus: 16
+      memory: "32G"
 
   - title: Postgres (no join optimizer)
     dbms: postgres
@@ -70,3 +88,5 @@ systems:
       from_collapse_limit: 1
     parameter:
       version: "18"
+      cpus: 16
+      memory: "32G"

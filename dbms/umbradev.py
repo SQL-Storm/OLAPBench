@@ -22,6 +22,10 @@ from util.process import Process
 class UmbraDev(Umbra):
     prebuilt_versions = ["2025-01-23", "2024-02-04"]
 
+    # Runs a local/CLI binary rather than a managed Docker container, so the cpus/memory
+    # restrictions cannot be enforced.
+    enforces_resource_limits = False
+
     def __init__(self, benchmark: Benchmark, db_dir: str, data_dir: str, params: dict, settings: dict):
         super().__init__(benchmark, db_dir, data_dir, params, settings)
         self._version = params.get("version", "HEAD")

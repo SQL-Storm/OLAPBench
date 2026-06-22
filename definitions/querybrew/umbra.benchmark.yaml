@@ -1,4 +1,4 @@
-title: SQLServer
+title: Umbra
 repetitions: 5
 warmup: 3
 timeout: 60
@@ -7,10 +7,12 @@ fetch_result: true
 query_plan:
   retrieve: true
   system_representation: true
-output: results/querypotter/sqlserver/
+output: results/querybrew/umbra/
 parameter:
-  version: "2025-latest"
+  version: "26.01"
   umbra_planner: false
+  cpus: 16
+  memory: "32G"
   umbra_planner_settings:
     usedirectio: true
     multiway: d
@@ -18,25 +20,19 @@ parameter:
   umbra_planner_parameter:
     version: "26.01"
 systems:
-  - title: SQLServer
-    dbms: sqlserver
+  - title: Umbra
+    dbms: umbra
     disabled: false
-  - title: SQLServer (Umbra Planner)
-    dbms: sqlserver
-    disabled: false
-    parameter:
-      umbra_planner: true
-  - title: SQLServer (Umbra Planner, no join optimizer)
-    dbms: sqlserver
+  - title: Umbra (Umbra Planner)
+    dbms: umbra
     disabled: false
     parameter:
       umbra_planner: true
-      force_order: true
 benchmarks:
   - name: tpch
-    scale: 100
+    scale: 10
   - name: tpcds
-    scale: 100
+    scale: 10
   - name: ssb
-    scale: 100
+    scale: 10
   - name: job

@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from statistics import median
 import threading
-from typing import Optional, List, Dict
+from typing import Any, Optional, List, Dict
 
 import docker
 from benchmarks.benchmark import Benchmark
@@ -23,14 +23,14 @@ class Result:
     GLOBAL_TIMEOUT = "global_timeout"
 
     def __init__(self):
-        self.state: Result.State = Result.SUCCESS
+        self.state: str = Result.SUCCESS
         self.client_total: List[float] = []
         self.total: List[float] = []
         self.execution: List[float] = []
         self.compilation: List[float] = []
         self.rows: Optional[int] = None
         self.extra: Dict[str, float] = {}
-        self.result: List[List[any]] = []
+        self.result: List[List[Any]] = []
         self.columns: List[str] = []
         self.message: str = ""
         self.plan: Optional[QueryPlan] = None
@@ -98,7 +98,70 @@ def _parse_bytes(input: str) -> int:
     raise ValueError(f"malformed memory specification: {input}")
 
 
+def _parse_cpuset(cpuset: str) -> list[int]:
+    """Parse a Docker cpuset_cpus string (e.g. "0-7,16-23") into a list of CPU ids."""
+    cpus: list[int] = []
+    for part in cpuset.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            low, high = part.split("-")
+            cpus.extend(range(int(low), int(high) + 1))
+        else:
+            cpus.append(int(part))
+    return cpus
+
+
+# Allocator that hands out CPU sets to containers. We restrict how many CPUs a container gets
+# (so it sees the configured core count) but spread the choice across the machine so multiple
+# concurrently running containers don't all land on the same cores. Usage is reference-counted
+# so CPUs freed by a destructed DBMS become preferred for the next allocation.
+_cpu_alloc_lock = threading.Lock()
+_cpu_usage: dict[int, int] = {}  # cpu id -> number of live containers currently assigned to it
+
+
+def _allocate_cpuset(cpuset: str, count: int) -> tuple[str, list[int]]:
+    """
+    Pick `count` CPUs out of the available pool, preferring the least-used ones.
+
+    `cpuset` is the pool of CPUs the container may use ("" means all host CPUs). Returns the
+    chosen cpuset string and the list of CPU ids reserved (so they can be released later). The
+    reservation is reference-counted; pass the returned list to `_release_cpus` on teardown.
+    """
+    available = _parse_cpuset(cpuset) if cpuset else list(range(numa.get_thread_count(None)))
+    if not available or count >= len(available):
+        # Nothing to restrict — let the container use the whole pool (nothing to reserve/release).
+        return cpuset, []
+
+    with _cpu_alloc_lock:
+        # Prefer the least-used CPUs; tie-break by id for determinism.
+        chosen = sorted(available, key=lambda c: (_cpu_usage.get(c, 0), c))[:count]
+        for c in chosen:
+            _cpu_usage[c] = _cpu_usage.get(c, 0) + 1
+
+    return ",".join(str(c) for c in chosen), chosen
+
+
+def _release_cpus(cpus: list[int]):
+    """Return previously reserved CPUs (from `_allocate_cpuset`) to the pool."""
+    if not cpus:
+        return
+    with _cpu_alloc_lock:
+        for c in cpus:
+            remaining = _cpu_usage.get(c, 0) - 1
+            if remaining > 0:
+                _cpu_usage[c] = remaining
+            else:
+                _cpu_usage.pop(c, None)
+
+
 class DBMS(ABC):
+    # Whether this system runs in a managed Docker container (via _start_container) and can
+    # therefore have the `cpus`/`memory` restrictions enforced. Subclasses that run outside
+    # such a container (e.g. a local binary) override this to False.
+    enforces_resource_limits = True
+
     class Index(Enum):
         NONE = "none"
         PRIMARY = "primary"
@@ -122,8 +185,34 @@ class DBMS(ABC):
         self._numa_node = params["numa_node"] if "numa_node" in params else None
         self._cpuset_cpus = numa.get_cpus(self._numa_node)
         self._cpuset_mems = numa.get_mems(self._numa_node)
-        self._buffer_size = params["buffer_size"] if "buffer_size" in params and params["buffer_size"] is not None else numa.get_memory_size(self._numa_node) / 2
-        self._worker_threads = params["worker_threads"] if "worker_threads" in params and params["worker_threads"] is not None else numa.get_thread_count(self._numa_node)
+
+        # `cpus` and `memory` define the resource budget. They are enforced at the container
+        # level (cpuset_cpus + mem_limit) AND handed to each DBMS so it sizes its own buffer pool
+        # and parallelism to match. The latter matters because most systems read the *host's*
+        # resources rather than the cgroup, and would otherwise ignore the cap (and get
+        # OOM-killed). `memory` may be given as a string with a unit suffix (e.g. "32G").
+        memory = params.get("memory")
+        if isinstance(memory, str):
+            memory = _parse_bytes(memory)
+        self._memory_limit = memory  # only set when explicitly configured; drives the Docker mem_limit
+
+        cpus = params.get("cpus")
+        self._cpus_limit = cpus  # only set when explicitly configured; drives the Docker cpuset
+
+        # Values passed to the DBMS configuration: the configured budget if set, else the host's.
+        self._memory = int(memory) if memory is not None else numa.get_memory_size(self._numa_node) / 2
+        self._cpus = int(cpus) if cpus is not None else numa.get_thread_count(self._numa_node)
+
+        # Restrict the container to `cpus` cores. The specific CPUs are picked by an allocator
+        # that spreads concurrent containers across the machine instead of all sharing the same
+        # cores; the reserved CPUs are released again when this DBMS is destructed (see __del__).
+        self._allocated_cpus: list[int] = []
+        if self._cpus_limit is not None:
+            self._cpuset_cpus, self._allocated_cpus = _allocate_cpuset(self._cpuset_cpus, int(self._cpus_limit))
+
+        # Warn if limits were requested but this system can't have them enforced via Docker.
+        if (self._cpus_limit is not None or self._memory_limit is not None) and not self.enforces_resource_limits:
+            log.warn(f"{self.name} does not run in a managed Docker container; cannot enforce cpus/memory restrictions")
         self._index = DBMS.Index.from_string(params.get("index", "primary"))
         self._version = params.get("version", "latest")
         self._umbra_planner = params.get("umbra_planner", False)
@@ -133,6 +222,17 @@ class DBMS(ABC):
         self._settings = settings
 
         self.container = None
+
+    def __del__(self):
+        # Release any CPUs this instance reserved so they can be reused by the next DBMS. Guarded
+        # because __del__ may run during interpreter shutdown when globals are already torn down.
+        try:
+            cpus = self.__dict__.get("_allocated_cpus")
+            if cpus:
+                _release_cpus(cpus)
+                self._allocated_cpus = []
+        except Exception:
+            pass
 
     @property
     @abstractmethod
@@ -155,17 +255,24 @@ class DBMS(ABC):
         except Exception as e:
             log.dbms(f"Could not pull {self.docker_image_name} docker image: {e}", self)
 
-    def _start_container(self, environment: dict, source_port: int, dest_port: int, source_db_dir: str, dest_db_dir: str, docker_params: dict = {}):
+    def _start_container(self, environment: dict, source_port: int, dest_port: int, source_db_dir: str, dest_db_dir: str, docker_params: Optional[dict] = None):
         # Pull the docker image
         image = self._pull_image()
 
         # Merge any extra bind mounts requested by the DBMS with the defaults
-        docker_params = dict(docker_params)
+        docker_params = dict(docker_params or {})
         volumes = {
             source_db_dir: {"bind": dest_db_dir, "mode": "rw"},
             self._data_dir: {"bind": "/data", "mode": "ro"},
         }
         volumes.update(docker_params.pop("volumes", {}))
+
+        # Constrain the container to the configured budget so the system inside sees a smaller
+        # machine. mem_limit caps the memory cgroup (the kernel OOM-kills the container if it is
+        # exceeded); cpuset_cpus (set in __init__) restricts it to the requested number of cores,
+        # so the reported core count matches. Only applied when `memory`/`cpus` were configured.
+        if self._memory_limit is not None:
+            docker_params.setdefault("mem_limit", int(self._memory_limit))
 
         # Start the container
         try:
@@ -286,7 +393,7 @@ class DBMS(ABC):
 
             log.dbms(f'Loaded database in {formatter.format_time(total_time)}', self)
 
-    def benchmark_query(self, queries: list[(str, str)], repetitions: int, warmup: int, timeout: int = 0, fetch_result: bool = True) -> list[str, Result]:
+    def benchmark_query(self, queries: list[tuple[str, str]], repetitions: int, warmup: int, timeout: int = 0, fetch_result: bool = True) -> dict[str, Result]:
         results: dict[str, Result] = {}
 
         with log.progress("Running queries...", len(queries) * (repetitions + warmup), base=repetitions + warmup) as progress:
@@ -309,10 +416,10 @@ class DBMS(ABC):
 
         return results
 
-    def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> QueryPlan:
+    def retrieve_query_plan(self, query: str, include_system_representation: bool = False, timeout: int = 0) -> Optional[QueryPlan]:
         return None
 
-    def connection_string(self) -> str:
+    def connection_string(self) -> Optional[str]:
         return None
 
 
@@ -356,8 +463,8 @@ class DBMSDescription:
 
         :param parser: The argument parser instance.
         """
-        parser.add_argument('--buffer-size', type=_parse_bytes, default=None, help="The desired buffer pool size.")
-        parser.add_argument('--worker-threads', type=int, default=None, help="The desired number of worker threads.")
+        parser.add_argument('--cpus', type=int, default=None, help="Restrict the container to this many CPUs (enforced via Docker only).")
+        parser.add_argument('--memory', type=_parse_bytes, default=None, help="Restrict the container to this much memory (enforced via Docker only).")
         parser.add_argument('--numa-node', type=int, default=None, help="Bind execution to a specific NUMA node.")
         parser.add_argument("--index", dest="index", type=DBMS.Index.from_string, choices=list(DBMS.Index), default=DBMS.Index.PRIMARY, help="Which indexes to build (default: primary).")
 

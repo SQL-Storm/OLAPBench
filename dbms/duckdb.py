@@ -99,6 +99,15 @@ class DuckDB(DBMS):
         self._start_container({}, 5432, self._host_port, self.host_dir.name, "/db", docker_params=docker_params)
         self._connect(self._host_port)
 
+        # Hand DuckDB its memory budget so it sizes its buffer manager to the container's
+        # mem_limit instead of the host's RAM. Without this DuckDB over-allocates and gets
+        # OOM-killed by Docker on heavy plans (e.g. with the join optimizer disabled), which
+        # crashes the container and forces a slow restart. Setting memory_limit makes DuckDB
+        # abort such queries gracefully ("Cannot allocate" -> OOM) while the container survives.
+        # Applied before user settings so an explicit memory_limit override still wins.
+        if self._memory is not None and "memory_limit" not in self._settings:
+            self._execute(f"PRAGMA memory_limit=\'{int(self._memory) // (1024 * 1024)}MiB\';", fetch_result=False)
+
         for (setting, value) in self._settings.items():
             self._execute(f"PRAGMA {setting}=\'{value}\';", fetch_result=False)
 

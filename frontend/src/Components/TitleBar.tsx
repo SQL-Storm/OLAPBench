@@ -19,7 +19,7 @@ interface TitleBarProps {
    port: string;
    setPort: (port: string) => void;
    timeout: string;
-   setTimeout: (timeout: string) => void;
+   onTimeoutChange: (timeout: string) => void;
    resultLimit: string;
    setResultLimit: (resultLimit: string) => void;
    onAddOutput?: () => void;
@@ -39,7 +39,7 @@ export default function TitleBar({
    port,
    setPort,
    timeout,
-   setTimeout,
+   onTimeoutChange,
    resultLimit,
    setResultLimit,
    onAddOutput,
@@ -56,6 +56,11 @@ export default function TitleBar({
             pr: 2,
             alignItems: 'center',
             backgroundColor: '#8882',
+            // On narrow windows the controls scroll horizontally instead of
+            // overlapping or being clipped.
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            '& > *': { flexShrink: 0 },
          }}
       >
          <Typography noWrap sx={{ fontSize: 28 }}>
@@ -82,7 +87,7 @@ export default function TitleBar({
          <TextField
             label="Timeout (s)"
             value={timeout}
-            onChange={(e) => setTimeout(e.target.value)}
+            onChange={(e) => onTimeoutChange(e.target.value)}
             size="small"
             sx={{ width: '120px' }}
             type="number"

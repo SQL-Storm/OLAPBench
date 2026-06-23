@@ -23,6 +23,3 @@ export function safeFormatSQL(query: string, context: string): string {
       return ensureTrailingNewline(query);
    }
 }
-
-// Backwards-compatible alias
-export const safeFormatSql = safeFormatSQL;

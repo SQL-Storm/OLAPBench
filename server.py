@@ -10,8 +10,10 @@ from __future__ import annotations
 import argparse
 import atexit
 import os
+import re
 import sys
 import threading
+import time
 from typing import Dict, Optional
 
 from dotenv import load_dotenv
@@ -40,6 +42,11 @@ benchmark_instances: Dict[str, Benchmark] = {}  # dataset_name -> Benchmark
 optimizer_dbms_name: Dict[str, Optional[str]] = {}  # dataset_name -> optimizer title
 dbms_lock = threading.Lock()  # Lock for modifying the above dicts
 dbms_restart_configs: Dict[tuple[str, str], dict] = {}  # (dataset_name, title) -> restart config
+dbms_restarting: set[tuple[str, str]] = set()  # keys with a restart currently in progress (dedup)
+
+# Background liveness supervisor: how often (seconds) to poll each DBMS container and restart
+# any that have crashed. Set to 0 to disable.
+HEALTH_CHECK_INTERVAL = 10
 
 
 def cleanup_dbms():
@@ -59,43 +66,114 @@ def restart_dbms(dataset_name: str, title: str) -> Optional[str]:
     """
     Restart a DBMS instance. Returns an error message on failure, or None on success.
     Acquires the per-DBMS query_lock to block concurrent queries during the restart.
+
+    Concurrent/duplicate restart requests for the same DBMS are coalesced: if a restart is
+    already in progress, this call returns immediately instead of restarting a second time.
     """
     key = (dataset_name, title)
     query_lock = dbms_locks.get(key, threading.Lock())
 
-    with query_lock:
-        with dbms_lock:
-            config = dbms_restart_configs.get(key)
-            if config is None:
-                return f'No restart config for {dataset_name}/{title}'
-            old_dbms = active_dbms.get(key)
-
-        # Shut down outside dbms_lock — can be slow
-        if old_dbms is not None:
-            try:
-                old_dbms.__exit__(None, None, None)
-            except Exception as e:
-                log.error(f"Error shutting down {dataset_name}/{title} during restart: {e}")
-
-        # Re-instantiate
-        dbms_descriptions = database_systems()
-        dbms_name = config['dbms_name']
-        try:
-            log.driver(f"Restarting {dataset_name}/{title}...")
-            benchmark = benchmark_instances[dataset_name]
-            dbms = dbms_descriptions[dbms_name].instantiate(
-                benchmark, config['db_dir'], config['data_dir'], config['params'], config['settings']
-            )
-            dbms.__enter__()
-            log.driver(f"Loading database for {title}...")
-            dbms.load_database()
-            with dbms_lock:
-                active_dbms[key] = dbms
-            log.driver(f"✓ {title} restarted successfully")
+    # Deduplicate: only one restart per DBMS at a time. Both the query handlers and the
+    # background liveness monitor can request a restart, so guard against doing it twice.
+    with dbms_lock:
+        if key in dbms_restarting:
             return None
-        except Exception as e:
-            log.error(f"Failed to restart {dataset_name}/{title}: {e}")
-            return str(e)
+        dbms_restarting.add(key)
+
+    try:
+        with query_lock:
+            with dbms_lock:
+                config = dbms_restart_configs.get(key)
+                if config is None:
+                    return f'No restart config for {dataset_name}/{title}'
+                old_dbms = active_dbms.get(key)
+
+            # Shut down outside dbms_lock — can be slow
+            if old_dbms is not None:
+                try:
+                    old_dbms.__exit__(None, None, None)
+                except Exception as e:
+                    log.error(f"Error shutting down {dataset_name}/{title} during restart: {e}")
+
+            # Re-instantiate
+            dbms_descriptions = database_systems()
+            dbms_name = config['dbms_name']
+            try:
+                log.driver(f"Restarting {dataset_name}/{title}...")
+                benchmark = benchmark_instances[dataset_name]
+                dbms = dbms_descriptions[dbms_name].instantiate(
+                    benchmark, config['db_dir'], config['data_dir'], config['params'], config['settings']
+                )
+                dbms.__enter__()
+                log.driver(f"Loading database for {title}...")
+                dbms.load_database()
+                with dbms_lock:
+                    active_dbms[key] = dbms
+                log.driver(f"✓ {title} restarted successfully")
+                return None
+            except Exception as e:
+                log.error(f"Failed to restart {dataset_name}/{title}: {e}")
+                return str(e)
+    finally:
+        with dbms_lock:
+            dbms_restarting.discard(key)
+
+
+def restart_if_crashed(dataset_name: str, title: str, dbms: DBMS) -> bool:
+    """
+    Restart a DBMS only if its container has actually crashed (is no longer running).
+
+    This is called from the query/plan/optimize handlers when an exception bubbles up, so
+    that genuine crashes trigger a restart while ordinary query errors (bad SQL, etc.) do
+    not needlessly churn the container. The restart runs in a background thread so the HTTP
+    request can return immediately. Returns True if a restart was triggered.
+    """
+    try:
+        status = dbms._container_status()
+    except Exception:
+        status = "removed"
+
+    if status == "running":
+        return False
+
+    log.error(f"{dataset_name}/{title} appears to have crashed (container status: {status}); restarting")
+    threading.Thread(target=restart_dbms, args=(dataset_name, title), daemon=True).start()
+    return True
+
+
+def monitor_dbms(interval: int):
+    """
+    Background supervisor that periodically checks every active DBMS and restarts any whose
+    container has crashed while idle (i.e. not caught by an in-flight query). Runs forever.
+    """
+    while True:
+        time.sleep(interval)
+        with dbms_lock:
+            instances = list(active_dbms.items())
+
+        for (dataset_name, title), dbms in instances:
+            key = (dataset_name, title)
+
+            # Skip anything already being restarted.
+            with dbms_lock:
+                if key in dbms_restarting:
+                    continue
+
+            query_lock = dbms_locks.get(key)
+            # If a query is in flight the lock is held — the container is in use and the query
+            # handler will deal with any crash, so skip this round.
+            if query_lock is None or not query_lock.acquire(blocking=False):
+                continue
+            try:
+                status = dbms._container_status()
+            except Exception:
+                status = "removed"
+            finally:
+                query_lock.release()
+
+            if status != "running":
+                log.error(f"{dataset_name}/{title} container is not running (status: {status}); restarting")
+                threading.Thread(target=restart_dbms, args=(dataset_name, title), daemon=True).start()
 
 
 def error(message: str, status_code: int = 404):
@@ -104,6 +182,34 @@ def error(message: str, status_code: int = 404):
         'status': 'error',
         'error': message
     }), status_code
+
+
+def acquire_query_lock(key: tuple[str, str], query_lock: threading.Lock, dbms_name: str, wait: float):
+    """
+    Acquire a DBMS's query lock, returning None on success (caller now holds the lock) or an
+    error response if it could not be acquired.
+
+    The lock serializes access to a single DBMS, so it is held both by a normal in-flight
+    request (another query/plan) and by an in-progress restart. The frontend routinely fires a
+    /query and a /plan for the same DBMS at nearly the same time, so we must NOT fail just
+    because a sibling request is running — we wait up to `wait` seconds for it to finish. We
+    only fail fast (503) when a genuine restart is in progress, since a restart reloads the
+    whole database and can take much longer than a client should block on.
+    """
+    if query_lock.acquire(blocking=False):
+        return None
+
+    with dbms_lock:
+        restarting = key in dbms_restarting
+    if restarting:
+        return error(f'DBMS "{dbms_name}" is restarting, please try again shortly', 503)
+
+    # A sibling query/plan is simply in flight — wait for it rather than rejecting the client.
+    if query_lock.acquire(timeout=wait):
+        # A restart may have started (and finished) while we waited; that's fine, we hold the
+        # lock now and active_dbms[key] points at the live instance.
+        return None
+    return error(f'DBMS "{dbms_name}" is busy, please try again shortly', 503)
 
 
 def resolve_dataset(dataset_name: Optional[str]):
@@ -128,6 +234,76 @@ def resolve_dataset(dataset_name: Optional[str]):
     return None, error(
         f'Multiple datasets loaded, "dataset" field is required. Available: {list(benchmark_instances.keys())}', 400
     )
+
+
+# Matches SQL comments and quoted literals/identifiers so they can be blanked out before we
+# inspect the actual SQL tokens. The alternation is scanned left-to-right by re.sub, so a
+# comment that opens before a string consumes any quotes inside it and vice versa — this is
+# what makes keyword detection robust against keywords hidden in strings or comments.
+_SQL_NOISE = re.compile(
+    r"/\*.*?\*/"            # /* block comment */
+    r"|--[^\n]*"            # -- line comment
+    r"|\$(\w*)\$.*?\$\1\$"  # $$ dollar-quoted string $$ (Postgres)
+    r"|'(?:[^']|'')*'"      # 'single-quoted string'
+    r"|\"(?:[^\"]|\"\")*\""  # "double-quoted identifier"
+    r"|`(?:[^`]|``)*`",     # `backtick identifier`
+    re.S,
+)
+
+# Statements may only begin with one of these read-only producers.
+_ALLOWED_LEADING = {"SELECT", "WITH", "TABLE", "VALUES"}
+
+# Any of these keywords appearing anywhere in the statement (e.g. inside a subquery or a
+# data-modifying CTE) marks it as something other than a pure read and is rejected.
+_FORBIDDEN_KEYWORDS = {
+    # data modification
+    "INSERT", "UPDATE", "DELETE", "MERGE", "UPSERT", "REPLACE", "TRUNCATE",
+    "COPY", "IMPORT", "EXPORT", "INTO",
+    # schema / DDL
+    "CREATE", "ALTER", "DROP", "RENAME",
+    # privileges
+    "GRANT", "REVOKE",
+    # session / system settings & maintenance
+    "SET", "RESET", "PRAGMA", "USE", "VACUUM", "ANALYZE", "REINDEX",
+    "CLUSTER", "REFRESH", "CHECKPOINT", "ATTACH", "DETACH", "INSTALL", "LOAD",
+    # procedural / transaction control
+    "CALL", "EXEC", "EXECUTE", "DO", "PREPARE", "DEALLOCATE", "DECLARE",
+    "BEGIN", "COMMIT", "ROLLBACK", "START", "SAVEPOINT", "LOCK", "UNLOCK",
+}
+
+
+def validate_read_only_query(query: str) -> Optional[str]:
+    """
+    Ensure a user-supplied query is a single, read-only SELECT statement.
+
+    Rejects anything that could modify data, change the schema, or alter system/session
+    settings (INSERT/UPDATE/DELETE, DDL, SET/PRAGMA, COPY, multi-statement injection, ...).
+
+    Returns an error message string if the query is rejected, or None if it is allowed.
+    """
+    # Blank out comments and quoted literals/identifiers so keywords hidden inside them
+    # cannot smuggle a write past the checks below.
+    stripped = _SQL_NOISE.sub(" ", query)
+
+    # Reject statement batching: only a single statement (one optional trailing ';') is allowed.
+    statements = [s for s in stripped.split(";") if s.strip()]
+    if len(statements) == 0:
+        return "Query must contain a SQL statement"
+    if len(statements) > 1:
+        return "Only a single SELECT statement is allowed (multiple statements are not permitted)"
+
+    tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", statements[0])
+    if not tokens:
+        return "Query must contain a SQL statement"
+
+    if tokens[0].upper() not in _ALLOWED_LEADING:
+        return "Only read-only SELECT statements are allowed"
+
+    for token in tokens:
+        if token.upper() in _FORBIDDEN_KEYWORDS:
+            return f'Only read-only SELECT statements are allowed (disallowed keyword: "{token.upper()}")'
+
+    return None
 
 
 @app.route('/', defaults={'path': ''})
@@ -207,6 +383,10 @@ def execute_query():
     if not query:
         return error('Missing required field: query', 400)
 
+    validation_error = validate_read_only_query(query)
+    if validation_error:
+        return error(validation_error, 400)
+
     dataset_name, err = resolve_dataset(data.get('dataset'))
     if err:
         return err
@@ -222,13 +402,17 @@ def execute_query():
             available = [t for (d, t) in active_dbms if d == dataset_name]
             return error(f'DBMS "{dbms_name}" is not active for dataset "{dataset_name}". Available: {available}', 404)
 
-        dbms = active_dbms[key]
         query_lock = dbms_locks[key]
 
-    # Serialize queries to the same DBMS; fail fast if a restart is in progress
-    if not query_lock.acquire(blocking=False):
-        return error(f'DBMS "{dbms_name}" is restarting, please try again shortly', 503)
+    # Serialize queries to the same DBMS. A concurrent query/plan is waited for; only a genuine
+    # restart fails fast. Allow generous slack over the query timeout for the sibling to finish.
+    lock_err = acquire_query_lock(key, query_lock, dbms_name, wait=timeout + 60)
+    if lock_err is not None:
+        return lock_err
     try:
+        # Re-read under the held lock: a restart may have replaced the instance while we waited.
+        with dbms_lock:
+            dbms = active_dbms[key]
         result = dbms._execute(query, fetch_result=fetch_result, timeout=timeout, fetch_result_limit=fetch_result_limit)
 
         response = {}
@@ -248,7 +432,7 @@ def execute_query():
 
     except Exception as e:
         log.error(f"Unexpected error executing query on {dataset_name}/{dbms_name}: {e}")
-        threading.Thread(target=restart_dbms, args=(dataset_name, dbms_name), daemon=True).start()
+        restart_if_crashed(dataset_name, dbms_name, dbms)
         return jsonify({'status': Result.FATAL, 'error': str(e), 'runtime_ms': None, 'server_time_ms': None})
 
     finally:
@@ -289,6 +473,10 @@ def get_query_plan():
     if not query:
         return error('Missing required field: query', 400)
 
+    validation_error = validate_read_only_query(query)
+    if validation_error:
+        return error(validation_error, 400)
+
     dataset_name, err = resolve_dataset(data.get('dataset'))
     if err:
         return err
@@ -300,13 +488,17 @@ def get_query_plan():
             available = [t for (d, t) in active_dbms if d == dataset_name]
             return error(f'DBMS "{dbms_name}" is not active for dataset "{dataset_name}". Available: {available}', 404)
 
-        dbms = active_dbms[key]
         query_lock = dbms_locks[key]
 
-    # Serialize queries to the same DBMS; fail fast if a restart is in progress
-    if not query_lock.acquire(blocking=False):
-        return error(f'DBMS "{dbms_name}" is restarting, please try again shortly', 503)
+    # Serialize queries to the same DBMS. A concurrent query/plan is waited for; only a genuine
+    # restart fails fast. Allow generous slack over the query timeout for the sibling to finish.
+    lock_err = acquire_query_lock(key, query_lock, dbms_name, wait=timeout + 60)
+    if lock_err is not None:
+        return lock_err
     try:
+        # Re-read under the held lock: a restart may have replaced the instance while we waited.
+        with dbms_lock:
+            dbms = active_dbms[key]
         plan = dbms.retrieve_query_plan(query, include_system_representation=False, timeout=timeout)
         if plan:
             return jsonify({'status': 'success', 'query_plan': encode_query_plan(plan, format="json")})
@@ -314,6 +506,7 @@ def get_query_plan():
 
     except Exception as e:
         log.error(f"Error retrieving query plan on {dataset_name}/{dbms_name}: {e}")
+        restart_if_crashed(dataset_name, dbms_name, dbms)
         return jsonify({'status': 'error', 'error': str(e)})
 
     finally:
@@ -352,6 +545,10 @@ def optimize():
     if not dbms:
         return error('Missing required field: dbms', 400)
 
+    validation_error = validate_read_only_query(query)
+    if validation_error:
+        return error(validation_error, 400)
+
     dataset_name, err = resolve_dataset(data.get('dataset'))
     if err:
         return err
@@ -388,6 +585,7 @@ def optimize():
 
         except Exception as e:
             log.error(f"Error optimizing query: {e}")
+            restart_if_crashed(dataset_name, opt_name, optimizer)
             return error(str(e), 500)
 
 
@@ -580,9 +778,11 @@ Endpoints:
     parser.add_argument('-j', '--json', required=True, help='YAML configuration file')
     parser.add_argument('--db-dir', default=os.path.join(workdir, 'db'), help='Database directory (default: ./db)')
     parser.add_argument('--data-dir', default=os.path.join(workdir, 'data'), help='Data directory (default: ./data)')
-    parser.add_argument('--base-port', type=int, default=55000, help='Starting port for DBMS allocation (default: 54320)')
+    parser.add_argument('--base-port', type=int, default=55000, help='Starting port for DBMS allocation (default: 55000)')
     parser.add_argument('--port', type=int, default=5000, help='HTTP server port (default: 5000)')
     parser.add_argument('--host', default='0.0.0.0', help='HTTP server host (default: 0.0.0.0)')
+    parser.add_argument('--health-check-interval', type=int, default=HEALTH_CHECK_INTERVAL,
+                        help=f'Seconds between DBMS liveness checks; crashed instances are restarted. 0 disables (default: {HEALTH_CHECK_INTERVAL})')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('-vv', '--very-verbose', action='store_true', help='Enable very verbose logging')
     benchmark_arguments(parser, required=False)
@@ -706,6 +906,12 @@ def main():
             log.error(f"Failed to set up DBMS instances for dataset '{bench.name}': {e}")
             cleanup_dbms()
             sys.exit(1)
+
+    # Start the background liveness supervisor so crashed DBMS instances are restarted.
+    interval = getattr(args, 'health_check_interval', HEALTH_CHECK_INTERVAL)
+    if interval and interval > 0:
+        log.driver(f"Starting DBMS health monitor (every {interval}s)")
+        threading.Thread(target=monitor_dbms, args=(interval,), daemon=True).start()
 
     _start_server(args)
 

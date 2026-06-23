@@ -15,9 +15,12 @@ import MonacoEditor from '@monaco-editor/react';
 import { useTheme } from '@mui/material/styles';
 import Dropdown from './Dropdown';
 import ResizablePanels from './ResizablePanels';
-import QueryResultView, { PlanResult } from './QueryResultView';
-import { ActiveDbms, QueryResponse, getQueryPlan } from '../Api';
+import QueryResultView from './QueryResultView';
+import { ActiveDbms, QueryResponse, PlanResponse, getQueryPlan } from '../Api';
+import { PlanViewMode } from '../types';
 import { safeFormatSQL } from '../utils/sqlFormat';
+import { MONACO_SQL_OPTIONS, addFormatSqlAction } from '../utils/monaco';
+import { errorMessage } from '../utils/errors';
 
 interface OptimizedQueryTabProps {
    id: string;
@@ -33,13 +36,14 @@ interface OptimizedQueryTabProps {
    showCloseButton: boolean;
    initialDbms?: string;
    activeDbms: ActiveDbms[];
+   activeDataset: string;
    hostname: string;
    port: string;
    timeout: number;
-   viewMode?: 'table' | 'plan';
-   onViewModeChange: (mode: 'table' | 'plan') => void;
-   queryPlan?: PlanResult | null;
-   onPlanFetched: (plan: PlanResult | null) => void;
+   viewMode?: PlanViewMode;
+   onViewModeChange: (mode: PlanViewMode) => void;
+   queryPlan?: PlanResponse | null;
+   onPlanFetched: (plan: PlanResponse | null) => void;
    autoRunEnabled: boolean;
    onToggleAutoRun: (enabled: boolean) => void;
    autoOptimize: boolean;
@@ -65,6 +69,7 @@ export default function OptimizedQueryTab({
    showCloseButton,
    initialDbms = '',
    activeDbms,
+   activeDataset,
    hostname,
    port,
    timeout,
@@ -147,11 +152,12 @@ export default function OptimizedQueryTab({
             selectedDbms.title,
             hostname,
             port,
-            timeout
+            timeout,
+            activeDataset || undefined
          );
          onPlanFetched(planResponse);
-      } catch (e: any) {
-         onPlanFetched({ status: 'error', error: e.message || 'Failed to fetch query plan' });
+      } catch (e) {
+         onPlanFetched({ status: 'error', error: errorMessage(e, 'Failed to fetch query plan') });
       } finally {
          setIsLoadingPlan(false);
       }
@@ -215,35 +221,42 @@ export default function OptimizedQueryTab({
    // Use editedValue if available, otherwise use result
    const displayValue = editedValue !== undefined ? editedValue : result;
 
-   const handleValueChange = (value: string | undefined) => {
-      if (value !== undefined) {
-         onEditValue(value);
-      }
-   };
-
-   // Auto-run on user typing (debounced) so result/runtime/rows stay current.
+   // Keep a ref to the latest server result so the edit handler can tell genuine
+   // user edits apart from programmatic updates.
+   const resultRef = useRef(result);
    useEffect(() => {
+      resultRef.current = result;
+   }, [result]);
+
+   // Auto-run is debounced and triggered only by genuine user edits in the editor.
+   // DBMS switches are handled (and run) explicitly in handleDbmsChange/cycleDbms,
+   // so they must not also schedule a run here — otherwise the query runs twice.
+   const handleValueChange = (value: string | undefined) => {
+      if (value === undefined) return;
+      onEditValue(value);
+
       if (autoRunDebounceRef.current) {
          clearTimeout(autoRunDebounceRef.current);
          autoRunDebounceRef.current = null;
       }
-
-      const hasUserEdits = editedValue !== undefined && editedValue !== result;
-      if (!autoRunEnabled || !hasUserEdits || !dbms || !displayValue.trim()) {
-         return;
+      const hasUserEdits = value !== resultRef.current;
+      if (autoRunQueriesRef.current && hasUserEdits && dbmsRef.current && value.trim()) {
+         autoRunDebounceRef.current = setTimeout(() => {
+            onRunRef.current(dbmsRef.current);
+         }, 350);
       }
+   };
 
-      autoRunDebounceRef.current = setTimeout(() => {
-         onRunRef.current(dbms);
-      }, 350);
-
-      return () => {
+   // Cancel any pending auto-run when the panel unmounts.
+   useEffect(
+      () => () => {
          if (autoRunDebounceRef.current) {
             clearTimeout(autoRunDebounceRef.current);
             autoRunDebounceRef.current = null;
          }
-      };
-   }, [editedValue, result, displayValue, dbms, autoRunEnabled]);
+      },
+      []
+   );
 
    // Update edited value when result changes from server (e.g., after optimization)
    // Only sync if result actually changed (not on initial mount)
@@ -435,59 +448,10 @@ export default function OptimizedQueryTab({
                      });
 
                      // Ctrl+Shift+F to format SQL
-                     editor.addAction({
-                        id: 'format-sql',
-                        label: 'Format SQL',
-                        keybindings: [
-                           monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF,
-                        ],
-                        run: () => {
-                           // Get the current selection; if empty, format the whole model
-                           const selection = editor.getSelection();
-                           const model = editor.getModel();
-                           if (!model) return;
-
-                           if (selection && !selection.isEmpty()) {
-                              const selectedText = model.getValueInRange(selection);
-                              const formatted = safeFormatSQL(selectedText, 'monaco selection');
-                              if (formatted !== selectedText) {
-                                 model.pushEditOperations(
-                                    [],
-                                    [{ range: selection, text: formatted }],
-                                    () => null
-                                 );
-                                 handleValueChange(model.getValue());
-                              }
-                           } else {
-                              const full = model.getValue();
-                              const formatted = safeFormatSQL(full, 'monaco document');
-                              if (formatted !== full) {
-                                 model.pushEditOperations(
-                                    [],
-                                    [{ range: model.getFullModelRange(), text: formatted }],
-                                    () => null
-                                 );
-                                 handleValueChange(formatted);
-                              }
-                           }
-                        },
-                     });
+                     addFormatSqlAction(editor, monaco, handleValueChange);
                   }}
                   theme={theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'}
-                  options={{
-                     fontSize: 14,
-                     minimap: { enabled: false },
-                     lineNumbers: 'on',
-                     scrollBeyondLastLine: false,
-                     readOnly: false,
-                     scrollbar: {
-                        vertical: 'hidden',
-                        horizontal: 'hidden',
-                        verticalHasArrows: false,
-                        verticalScrollbarSize: 0,
-                        verticalSliderSize: 0,
-                     },
-                  }}
+                  options={MONACO_SQL_OPTIONS}
                />
                <QueryResultView
                   queryResult={queryResult || null}

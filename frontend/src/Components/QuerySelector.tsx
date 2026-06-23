@@ -1,4 +1,5 @@
 // QueryBrew (c) 2025
+import { SyntheticEvent } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
 import { Query } from '../Api';
@@ -21,7 +22,7 @@ export default function QuerySelection({
    onSelectQuery,
    selectedQueryName,
 }: QuerySelectionProps) {
-   const handleSelectQuery = (_event: any, value: Query | null) => {
+   const handleSelectQuery = (_event: SyntheticEvent, value: Query | null) => {
       if (value) {
          setSqlQuery(value.sql);
          // Trigger run after selection if callback provided

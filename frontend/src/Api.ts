@@ -12,9 +12,15 @@ export interface QueryResponse {
    server_time_ms?: number;
    rows?: number;
    columns?: string[];
-   result?: any[][];
+   result?: unknown[][];
    error?: string;
    query_plan?: object;
+}
+
+export interface PlanResponse {
+   status: string;
+   query_plan?: object;
+   error?: string;
 }
 
 export interface ActiveDbms {
@@ -56,69 +62,79 @@ export interface DatasetResponse {
    query_overrides?: QueryOverride[]; // Legacy field for backwards compatibility
 }
 
-/**
- * Check server health and get available DBMS instances
- */
-export async function checkHealth(hostname: string, port: string): Promise<HealthResponse> {
-   const apiUrl = `http://${hostname}:${port}`;
+interface RequestOptions {
+   method?: 'GET' | 'POST';
+   body?: unknown;
+   serviceLabel: string; // Used in the "unable to connect" message
+   parseError?: boolean; // Parse `error` from the response body on non-OK status
+}
 
+/** A `fetch` rejection (vs. an HTTP error) — i.e. the server could not be reached. */
+function isFetchFailure(error: unknown): boolean {
+   return error instanceof TypeError && error.message.includes('fetch');
+}
+
+/**
+ * Shared JSON request helper. Builds the URL, sets headers, surfaces HTTP errors,
+ * and maps connection failures to a friendly, service-specific message.
+ */
+async function request<T>(
+   hostname: string,
+   port: string,
+   path: string,
+   { method = 'POST', body, serviceLabel, parseError = false }: RequestOptions
+): Promise<T> {
    try {
-      const response = await fetch(`${apiUrl}/health`, {
-         method: 'GET',
-         headers: {
-            'Content-Type': 'application/json',
-         },
+      const response = await fetch(`http://${hostname}:${port}${path}`, {
+         method,
+         headers: { 'Content-Type': 'application/json' },
+         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
 
       if (!response.ok) {
+         if (parseError) {
+            const errorData = (await response.json().catch(() => ({}))) as { error?: string };
+            throw new Error(errorData.error || `Server responded with status ${response.status}`);
+         }
          throw new Error(`Server responded with status ${response.status}`);
       }
 
       return await response.json();
-   } catch (error: any) {
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-         throw new Error('Unable to connect to server. Please ensure the server is running.');
+   } catch (error) {
+      if (isFetchFailure(error)) {
+         throw new Error(
+            `Unable to connect to ${serviceLabel}. Please ensure the server is running.`
+         );
       }
       throw error;
    }
+}
+
+/**
+ * Check server health and get available DBMS instances
+ */
+export function checkHealth(hostname: string, port: string): Promise<HealthResponse> {
+   return request(hostname, port, '/health', { method: 'GET', serviceLabel: 'server' });
 }
 
 /**
  * Get dataset schema and queries from server
  */
-export async function getDataset(
+export function getDataset(
    hostname: string,
    port: string,
    dataset?: string
 ): Promise<DatasetResponse> {
-   const apiUrl = `http://${hostname}:${port}`;
-
-   try {
-      const response = await fetch(`${apiUrl}/dataset`, {
-         method: 'POST',
-         headers: {
-            'Content-Type': 'application/json',
-         },
-         body: JSON.stringify(dataset ? { dataset } : {}),
-      });
-
-      if (!response.ok) {
-         throw new Error(`Server responded with status ${response.status}`);
-      }
-
-      return await response.json();
-   } catch (error: any) {
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-         throw new Error('Unable to connect to server. Please ensure the server is running.');
-      }
-      throw error;
-   }
+   return request(hostname, port, '/dataset', {
+      body: dataset ? { dataset } : {},
+      serviceLabel: 'server',
+   });
 }
 
 /**
  * Optimize SQL query via API
  */
-export async function optimize(
+export function optimize(
    query: string,
    dbms: string,
    hostname: string,
@@ -127,37 +143,17 @@ export async function optimize(
 ): Promise<OptimizeResponse> {
    const body: Record<string, string> = { query, dbms };
    if (dataset) body.dataset = dataset;
-   const apiUrl = `http://${hostname}:${port}`;
-
-   try {
-      const response = await fetch(`${apiUrl}/optimize`, {
-         method: 'POST',
-         headers: {
-            'Content-Type': 'application/json',
-         },
-         body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-         const errorData = await response.json().catch(() => ({}));
-         throw new Error(errorData.error || `Server responded with status ${response.status}`);
-      }
-
-      return await response.json();
-   } catch (error: any) {
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-         throw new Error(
-            'Unable to connect to optimization service. Please ensure the server is running.'
-         );
-      }
-      throw error;
-   }
+   return request(hostname, port, '/optimize', {
+      body,
+      serviceLabel: 'optimization service',
+      parseError: true,
+   });
 }
 
 /**
  * Execute SQL query via API
  */
-export async function runQuery(
+export function runQuery(
    query: string,
    dbms: string,
    hostname: string,
@@ -174,43 +170,17 @@ export async function runQuery(
       fetch_result_limit: resultLimit,
    };
    if (dataset) body.dataset = dataset;
-   const apiUrl = `http://${hostname}:${port}`;
-
-   try {
-      const response = await fetch(`${apiUrl}/query`, {
-         method: 'POST',
-         headers: {
-            'Content-Type': 'application/json',
-         },
-         body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-         const errorData = await response.json().catch(() => ({}));
-         throw new Error(errorData.error || `Server responded with status ${response.status}`);
-      }
-
-      return await response.json();
-   } catch (error: any) {
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-         throw new Error(
-            'Unable to connect to query service. Please ensure the server is running.'
-         );
-      }
-      throw error;
-   }
-}
-
-export interface PlanResponse {
-   status: string;
-   query_plan?: object;
-   error?: string;
+   return request(hostname, port, '/query', {
+      body,
+      serviceLabel: 'query service',
+      parseError: true,
+   });
 }
 
 /**
  * Get query plan via API
  */
-export async function getQueryPlan(
+export function getQueryPlan(
    query: string,
    dbms: string,
    hostname: string,
@@ -220,27 +190,9 @@ export async function getQueryPlan(
 ): Promise<PlanResponse> {
    const body: Record<string, unknown> = { query, dbms, timeout };
    if (dataset) body.dataset = dataset;
-   const apiUrl = `http://${hostname}:${port}`;
-
-   try {
-      const response = await fetch(`${apiUrl}/plan`, {
-         method: 'POST',
-         headers: {
-            'Content-Type': 'application/json',
-         },
-         body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-         const errorData = await response.json().catch(() => ({}));
-         throw new Error(errorData.error || `Server responded with status ${response.status}`);
-      }
-
-      return await response.json();
-   } catch (error: any) {
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-         throw new Error('Unable to connect to plan service. Please ensure the server is running.');
-      }
-      throw error;
-   }
+   return request(hostname, port, '/plan', {
+      body,
+      serviceLabel: 'plan service',
+      parseError: true,
+   });
 }

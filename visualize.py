@@ -16,6 +16,17 @@ import sys
 from ast import literal_eval
 
 
+def _raise_csv_field_limit():
+    """Some result fields (query text, extra blobs) exceed csv's default 128K cap."""
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            return
+        except OverflowError:
+            limit //= 2
+
+
 def parse_list(s):
     if not s:
         return []
@@ -42,9 +53,10 @@ def parse_float(s):
     if s is None or s == "":
         return None
     try:
-        return float(s)
+        v = float(s)
     except ValueError:
         return None
+    return v if v == v else None  # filter NaN
 
 
 def query_sort_key(q):
@@ -69,6 +81,7 @@ def parse_remote(spec):
 
 def load_results(stream):
     rows = []
+    _raise_csv_field_limit()
     reader = csv.DictReader(stream)
     for row in reader:
         state = row.get("state") or ""
@@ -82,16 +95,25 @@ def load_results(stream):
                         continue
                     if isinstance(v, (int, float)) and v == v:  # filter NaN
                         extra_numeric[k] = v
+        total = parse_list(row.get("total", "")) if success else []
+        total_mean = parse_float(row.get("total_mean")) if success else None
+        total_median = parse_float(row.get("total_median")) if success else None
+        client_total_median = parse_float(row.get("client_total_median")) if success else None
+        # Embedded systems (e.g. DuckDB) report no server-side total; fall back to client timing.
+        if success and total_median is None:
+            total = parse_list(row.get("client_total", ""))
+            total_mean = parse_float(row.get("client_total_mean"))
+            total_median = client_total_median
         rows.append({
             "system": row["title"],
             "query": row["query"],
             "state": state,
-            "total": parse_list(row.get("total", "")) if success else [],
-            "total_mean": parse_float(row.get("total_mean")) if success else None,
-            "total_median": parse_float(row.get("total_median")) if success else None,
+            "total": total,
+            "total_mean": total_mean,
+            "total_median": total_median,
             "execution_median": parse_float(row.get("execution_median")) if success else None,
             "compilation_median": parse_float(row.get("compilation_median")) if success else None,
-            "client_total_median": parse_float(row.get("client_total_median")) if success else None,
+            "client_total_median": client_total_median,
             "extra": extra_numeric,
         })
     return rows

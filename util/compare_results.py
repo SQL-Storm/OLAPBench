@@ -4,7 +4,7 @@ from functools import cmp_to_key
 import math
 import os
 import re
-from typing import List
+from typing import Any, List
 
 import simplejson as json
 
@@ -67,7 +67,7 @@ def sort_query_list(query_list: List[str]):
     return sorted(query_list, key=natural_sort_key)
 
 
-def compare_arrays(a: list[any], b: list[any]) -> int:
+def compare_arrays(a: list[Any], b: list[Any]) -> int:
     """
     Compare two arrays element by element for sorting and equality.
 

@@ -13,34 +13,73 @@ import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import SchemaIcon from '@mui/icons-material/Schema';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CheckIcon from '@mui/icons-material/Check';
 import CircularProgress from '@mui/material/CircularProgress';
 import QueryPlanTree from './QueryPlanTree';
+import QueryPlanGraph from './QueryPlanGraph';
+import { QueryResponse, PlanResponse } from '../Api';
+import { PlanViewMode } from '../types';
 
-export interface QueryResult {
-   status: string;
-   runtime_ms?: number;
-   server_time_ms?: number;
-   rows?: number;
-   columns?: string[];
-   result?: unknown[][];
-   error?: string;
+// Auto-hiding scrollbar: hidden by default, thin on hover (table + plan views).
+const hiddenScrollbarSx = {
+   flex: 1,
+   overflow: 'auto',
+   scrollbarWidth: 'none',
+   msOverflowStyle: 'none',
+   '&::-webkit-scrollbar': {
+      width: 0,
+      height: 0,
+   },
+   '&:hover': {
+      scrollbarWidth: 'thin',
+      msOverflowStyle: 'auto',
+   },
+   '&:hover::-webkit-scrollbar': {
+      width: 8,
+      height: 8,
+   },
+   '&:hover::-webkit-scrollbar-thumb': {
+      backgroundColor: 'rgba(136, 136, 136, 0.8)',
+      borderRadius: 8,
+   },
+   '&:hover::-webkit-scrollbar-track': {
+      backgroundColor: 'transparent',
+   },
+} as const;
+
+const headerBg = (theme: { palette: { mode: string } }) =>
+   theme.palette.mode === 'dark' ? '#222222' : '#efefef';
+
+function isNumericValue(cell: unknown): boolean {
+   return typeof cell === 'number' || typeof cell === 'bigint';
 }
 
-export interface PlanResult {
-   status: string;
-   query_plan?: object;
-   error?: string;
+/** Render a raw result cell to a display string (objects/arrays become JSON). */
+function formatCellValue(cell: unknown): string {
+   if (cell === null || cell === undefined) return '';
+   if (typeof cell === 'object') {
+      try {
+         return JSON.stringify(cell);
+      } catch {
+         return String(cell);
+      }
+   }
+   return String(cell);
 }
 
 interface QueryResultViewProps {
-   queryResult: QueryResult | null;
-   queryPlan?: PlanResult | null;
+   queryResult: QueryResponse | null;
+   queryPlan?: PlanResponse | null;
    isLoadingPlan?: boolean;
    onFetchPlan?: () => void;
-   viewMode?: 'table' | 'plan';
-   onViewModeChange?: (mode: 'table' | 'plan') => void;
+   viewMode?: PlanViewMode;
+   onViewModeChange?: (mode: PlanViewMode) => void;
 }
 
 /**
@@ -54,9 +93,11 @@ export default function QueryResultView({
    viewMode,
    onViewModeChange,
 }: QueryResultViewProps) {
-   const [localViewMode, setLocalViewMode] = useState<'table' | 'plan'>('table');
+   const [localViewMode, setLocalViewMode] = useState<PlanViewMode>('table');
+   const [copied, setCopied] = useState(false);
    const prevQueryResultRef = useRef(queryResult);
    const activeViewMode = viewMode ?? localViewMode;
+   const isPlanView = activeViewMode === 'plan' || activeViewMode === 'graph';
 
    // Track the last query result to detect changes without forcing a view reset
    useEffect(() => {
@@ -66,7 +107,7 @@ export default function QueryResultView({
    // If the user is in plan view, automatically fetch the plan for the current result when needed
    useEffect(() => {
       if (
-         activeViewMode === 'plan' &&
+         isPlanView &&
          onFetchPlan &&
          queryResult &&
          queryResult.status === 'success' &&
@@ -75,11 +116,11 @@ export default function QueryResultView({
       ) {
          onFetchPlan();
       }
-   }, [activeViewMode, queryPlan, onFetchPlan, queryResult, isLoadingPlan]);
+   }, [isPlanView, queryPlan, onFetchPlan, queryResult, isLoadingPlan]);
 
    const handleViewModeChange = (
       _event: React.MouseEvent<HTMLElement>,
-      newMode: 'table' | 'plan' | null
+      newMode: PlanViewMode | null
    ) => {
       if (newMode !== null) {
          if (viewMode !== undefined) {
@@ -88,7 +129,7 @@ export default function QueryResultView({
             setLocalViewMode(newMode);
          }
          // Fetch plan on first click if not already loaded
-         if (newMode === 'plan' && !queryPlan && onFetchPlan) {
+         if ((newMode === 'plan' || newMode === 'graph') && !queryPlan && onFetchPlan) {
             onFetchPlan();
          }
       }
@@ -115,11 +156,38 @@ export default function QueryResultView({
    const statusColor = isSuccess ? 'success' : isRunning ? 'info' : 'error';
 
    // Generate column headers (use provided columns or generate generic ones)
+   const rows = queryResult.result || [];
    const columns =
-      queryResult.columns ||
-      (queryResult.result && queryResult.result.length > 0
-         ? queryResult.result[0].map((_, i) => `Column ${i + 1}`)
-         : []);
+      queryResult.columns || (rows.length > 0 ? rows[0].map((_, i) => `Column ${i + 1}`) : []);
+
+   // Copy the result set to the clipboard as tab-separated values (header + rows).
+   const handleCopyResults = async () => {
+      const header = columns.join('\t');
+      const body = rows.map((row) => row.map(formatCellValue).join('\t')).join('\n');
+      try {
+         await navigator.clipboard.writeText(body ? `${header}\n${body}` : header);
+         setCopied(true);
+         window.setTimeout(() => setCopied(false), 1500);
+      } catch {
+         // Clipboard access can be denied (e.g. insecure context); ignore silently.
+      }
+   };
+
+   // A column is numeric (and thus right-aligned) when every non-null value in it is a number.
+   const numericColumns = columns.map((_, colIdx) => {
+      let sawValue = false;
+      for (const row of rows) {
+         const value = row[colIdx];
+         if (value === null || value === undefined) continue;
+         sawValue = true;
+         if (!isNumericValue(value)) return false;
+      }
+      return sawValue;
+   });
+
+   // Fixed minimal width for the row-number gutter, sized to the largest row number so it
+   // never absorbs leftover space (the data columns take that via table-layout: fixed).
+   const gutterWidth = `calc(${String(rows.length).length}ch + 12px)`;
 
    // Show loading state
    if (isRunning) {
@@ -171,12 +239,28 @@ export default function QueryResultView({
                   </Typography>
                )}
                <Box sx={{ flexGrow: 1 }} />
+               {isSuccess && rows.length > 0 && activeViewMode === 'table' && (
+                  <Tooltip title={copied ? 'Copied!' : 'Copy results (TSV)'}>
+                     <IconButton
+                        size="small"
+                        aria-label="Copy results to clipboard"
+                        onClick={handleCopyResults}
+                     >
+                        {copied ? (
+                           <CheckIcon sx={{ fontSize: 18 }} color="success" />
+                        ) : (
+                           <ContentCopyIcon sx={{ fontSize: 18 }} />
+                        )}
+                     </IconButton>
+                  </Tooltip>
+               )}
                {isSuccess && (
                   <ToggleButtonGroup
                      value={activeViewMode}
                      exclusive
                      onChange={handleViewModeChange}
                      size="small"
+                     aria-label="Result view mode"
                      sx={{ height: 28 }}
                   >
                      <ToggleButton value="table" sx={{ px: 1, py: 0.5 }}>
@@ -187,6 +271,10 @@ export default function QueryResultView({
                         <AccountTreeIcon sx={{ fontSize: 18, mr: 0.5 }} />
                         <Typography variant="caption">Plan</Typography>
                      </ToggleButton>
+                     <ToggleButton value="graph" sx={{ px: 1, py: 0.5 }}>
+                        <SchemaIcon sx={{ fontSize: 18, mr: 0.5 }} />
+                        <Typography variant="caption">Graph</Typography>
+                     </ToggleButton>
                   </ToggleButtonGroup>
                )}
             </Stack>
@@ -195,45 +283,37 @@ export default function QueryResultView({
          {/* Content area - Table or Plan view */}
          {activeViewMode === 'table' ? (
             // Table view
-            isSuccess && queryResult.result && queryResult.result.length > 0 ? (
-               <TableContainer
-                  component={Paper}
-                  sx={{
-                     flex: 1,
-                     overflow: 'auto',
-                     scrollbarWidth: 'none',
-                     msOverflowStyle: 'none',
-                     '&::-webkit-scrollbar': {
-                        width: 0,
-                        height: 0,
-                     },
-                     '&:hover': {
-                        scrollbarWidth: 'thin',
-                        msOverflowStyle: 'auto',
-                     },
-                     '&:hover::-webkit-scrollbar': {
-                        width: 8,
-                        height: 8,
-                     },
-                     '&:hover::-webkit-scrollbar-thumb': {
-                        backgroundColor: 'rgba(136, 136, 136, 0.8)',
-                        borderRadius: 8,
-                     },
-                     '&:hover::-webkit-scrollbar-track': {
-                        backgroundColor: 'transparent',
-                     },
-                  }}
-               >
-                  <Table stickyHeader size="small" sx={{ minWidth: 650 }}>
+            isSuccess && rows.length > 0 ? (
+               <TableContainer component={Paper} sx={hiddenScrollbarSx}>
+                  <Table
+                     stickyHeader
+                     size="small"
+                     sx={{ tableLayout: 'fixed', width: '100%', minWidth: 650 }}
+                  >
                      <TableHead>
                         <TableRow>
+                           <TableCell
+                              sx={{
+                                 width: gutterWidth,
+                                 pl: 0.5,
+                                 pr: 0.5,
+                                 fontWeight: 'bold',
+                                 textAlign: 'right',
+                                 color: 'text.disabled',
+                                 userSelect: 'none',
+                                 whiteSpace: 'nowrap',
+                                 backgroundColor: headerBg,
+                              }}
+                           >
+                              #
+                           </TableCell>
                            {columns.map((col, index) => (
                               <TableCell
                                  key={index}
+                                 align={numericColumns[index] ? 'right' : 'left'}
                                  sx={{
                                     fontWeight: 'bold',
-                                    backgroundColor: (theme) =>
-                                       theme.palette.mode === 'dark' ? '#222222' : '#efefef',
+                                    backgroundColor: headerBg,
                                     whiteSpace: 'nowrap',
                                  }}
                               >
@@ -243,33 +323,62 @@ export default function QueryResultView({
                         </TableRow>
                      </TableHead>
                      <TableBody>
-                        {queryResult.result.map((row, rowIndex) => (
+                        {rows.map((row, rowIndex) => (
                            <TableRow
                               key={rowIndex}
+                              hover
                               sx={{ '&:nth-of-type(odd)': { backgroundColor: '#8881' } }}
                            >
-                              {row.map((cell, cellIndex) => (
-                                 <TableCell
-                                    key={cellIndex}
-                                    sx={{
-                                       whiteSpace: 'nowrap',
-                                       maxWidth: 300,
-                                       overflow: 'hidden',
-                                       textOverflow: 'ellipsis',
-                                    }}
-                                 >
-                                    {cell === null ? (
-                                       <Typography
-                                          component="span"
-                                          sx={{ color: '#888', fontStyle: 'italic' }}
-                                       >
-                                          NULL
-                                       </Typography>
-                                    ) : (
-                                       String(cell)
-                                    )}
-                                 </TableCell>
-                              ))}
+                              <TableCell
+                                 sx={{
+                                    width: gutterWidth,
+                                    pl: 0.5,
+                                    pr: 0.5,
+                                    textAlign: 'right',
+                                    color: 'text.disabled',
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.72rem',
+                                    userSelect: 'none',
+                                    whiteSpace: 'nowrap',
+                                 }}
+                              >
+                                 {rowIndex + 1}
+                              </TableCell>
+                              {row.map((cell, cellIndex) => {
+                                 const isNull = cell === null || cell === undefined;
+                                 const display = formatCellValue(cell);
+                                 return (
+                                    <TableCell
+                                       key={cellIndex}
+                                       align={numericColumns[cellIndex] ? 'right' : 'left'}
+                                       title={isNull ? 'NULL' : display}
+                                       sx={{
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          fontFamily: 'monospace',
+                                          fontSize: '0.8rem',
+                                          fontVariantNumeric: 'tabular-nums',
+                                          userSelect: 'text',
+                                       }}
+                                    >
+                                       {isNull ? (
+                                          <Typography
+                                             component="span"
+                                             sx={{
+                                                color: '#888',
+                                                fontStyle: 'italic',
+                                                fontSize: 'inherit',
+                                             }}
+                                          >
+                                             NULL
+                                          </Typography>
+                                       ) : (
+                                          display
+                                       )}
+                                    </TableCell>
+                                 );
+                              })}
                            </TableRow>
                         ))}
                      </TableBody>
@@ -292,34 +401,7 @@ export default function QueryResultView({
             ) : null
          ) : (
             // Plan view
-            <Box
-               sx={{
-                  flex: 1,
-                  overflow: 'auto',
-                  p: 0.5,
-                  scrollbarWidth: 'none',
-                  msOverflowStyle: 'none',
-                  '&::-webkit-scrollbar': {
-                     width: 0,
-                     height: 0,
-                  },
-                  '&:hover': {
-                     scrollbarWidth: 'thin',
-                     msOverflowStyle: 'auto',
-                  },
-                  '&:hover::-webkit-scrollbar': {
-                     width: 8,
-                     height: 8,
-                  },
-                  '&:hover::-webkit-scrollbar-thumb': {
-                     backgroundColor: 'rgba(136, 136, 136, 0.8)',
-                     borderRadius: 8,
-                  },
-                  '&:hover::-webkit-scrollbar-track': {
-                     backgroundColor: 'transparent',
-                  },
-               }}
-            >
+            <Box sx={{ ...hiddenScrollbarSx, p: 0.5 }}>
                {isLoadingPlan ? (
                   <Box
                      sx={{
@@ -337,7 +419,11 @@ export default function QueryResultView({
                ) : queryPlan?.status === 'error' ? (
                   <Typography color="error">{queryPlan.error}</Typography>
                ) : queryPlan?.query_plan ? (
-                  <QueryPlanTree plan={queryPlan.query_plan} />
+                  activeViewMode === 'graph' ? (
+                     <QueryPlanGraph plan={queryPlan.query_plan} />
+                  ) : (
+                     <QueryPlanTree plan={queryPlan.query_plan} />
+                  )
                ) : (
                   <Typography variant="body2" color="text.secondary">
                      No query plan available. Run a query first.

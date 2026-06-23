@@ -89,7 +89,8 @@ function buildCoutMap(root: PlanNode | undefined): Map<PlanNode, number> {
    if (!root) return result;
 
    const visit = (node: PlanNode): number => {
-      const ownCard = typeof node._attrs?.exact_cardinality === 'number' ? node._attrs.exact_cardinality : 0;
+      const ownCard =
+         typeof node._attrs?.exact_cardinality === 'number' ? node._attrs.exact_cardinality : 0;
       if (isScanNode(node)) {
          result.set(node, ownCard);
          return ownCard;
@@ -150,7 +151,8 @@ function PlanNodeView({
 
    // Calculate accuracy indicator
    const getCardinalityColor = () => {
-      if (estimatedCard === undefined || exactCard === undefined || estimatedCard === 0) return 'default';
+      if (estimatedCard === undefined || exactCard === undefined || estimatedCard === 0)
+         return 'default';
       const ratio = estimatedCard / exactCard;
       if (ratio >= 0.5 && ratio <= 2) return 'success';
       if (ratio >= 0.1 && ratio <= 10) return 'warning';
@@ -309,9 +311,7 @@ function PlanNodeView({
                   )}
 
                   {exactCard !== undefined && nodeCout !== undefined && (
-                     <Tooltip
-                        title="Computed recursively from exact cardinalities"
-                     >
+                     <Tooltip title="Computed recursively from exact cardinalities">
                         <Chip
                            label={`cout ${formatMetric(nodeCout)}`}
                            size="small"

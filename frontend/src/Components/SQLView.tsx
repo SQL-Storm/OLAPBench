@@ -8,6 +8,7 @@ import Tooltip from '@mui/material/Tooltip';
 import CodeIcon from '@mui/icons-material/Code';
 import { useTheme } from '@mui/material/styles';
 import { safeFormatSQL } from '../utils/sqlFormat';
+import { MONACO_SQL_OPTIONS, addFormatSqlAction } from '../utils/monaco';
 
 interface MonacoProps {
    // Additional imports for the format button
@@ -94,57 +95,10 @@ const Monaco = memo(function Monaco({
             }
 
             // Ctrl+Shift+F to format SQL
-            editor.addAction({
-               id: 'format-sql',
-               label: 'Format SQL',
-               keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF],
-               run: () => {
-                  // Get the current selection; if empty, format the whole model
-                  const selection = editor.getSelection();
-                  const model = editor.getModel();
-                  if (!model) return;
-
-                     if (selection && !selection.isEmpty()) {
-                        const selectedText = model.getValueInRange(selection);
-                     const formatted = safeFormatSQL(selectedText, 'monaco selection');
-                     if (formatted !== selectedText) {
-                        model.pushEditOperations(
-                           [],
-                           [{ range: selection, text: formatted }],
-                           () => null
-                        );
-                        setValue(model.getValue());
-                     }
-                  } else {
-                     const full = model.getValue();
-                     const formatted = safeFormatSQL(full, 'monaco document');
-                     if (formatted !== full) {
-                        model.pushEditOperations(
-                           [],
-                           [{ range: model.getFullModelRange(), text: formatted }],
-                           () => null
-                        );
-                        setValue(formatted);
-                     }
-                  }
-               },
-            });
+            addFormatSqlAction(editor, monaco, setValue);
          }}
          theme={theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'}
-         options={{
-            fontSize: 14,
-            minimap: { enabled: false },
-            lineNumbers: 'on',
-            scrollBeyondLastLine: false,
-            readOnly: readOnly,
-            scrollbar: {
-               vertical: 'hidden',
-               horizontal: 'hidden',
-               verticalHasArrows: false,
-               verticalScrollbarSize: 0,
-               verticalSliderSize: 0,
-            },
-         }}
+         options={{ ...MONACO_SQL_OPTIONS, readOnly }}
       />
    );
 });

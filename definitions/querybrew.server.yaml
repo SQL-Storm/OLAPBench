@@ -59,7 +59,7 @@ systems:
     dbms: sqlserver
     disabled: false
     parameter:
-      version: "2025-latest"
+      version: "2022-latest"
       cpus: 16
       memory: "32G"
 
@@ -67,7 +67,7 @@ systems:
     dbms: sqlserver
     disabled: false
     parameter:
-      version: "2025-latest"
+      version: "2022-latest"
       force_order: true
       cpus: 16
       memory: "32G"

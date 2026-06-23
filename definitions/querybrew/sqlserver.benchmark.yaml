@@ -9,7 +9,7 @@ query_plan:
   system_representation: true
 output: results/querybrew/sqlserver/
 parameter:
-  version: "2025-latest"
+  version: "2022-latest"
   umbra_planner: false
   cpus: 16
   memory: "32G"

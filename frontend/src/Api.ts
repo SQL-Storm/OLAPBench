@@ -75,6 +75,18 @@ function isFetchFailure(error: unknown): boolean {
 }
 
 /**
+ * Build the API base URL. Priority:
+ *   1. REACT_APP_API_URL (build-time override)
+ *   2. a hostname that already includes a scheme (e.g. "https://host/api") — used verbatim
+ *   3. otherwise http://hostname:port
+ */
+function apiBase(hostname: string, port: string): string {
+   if (process.env.REACT_APP_API_URL) return process.env.REACT_APP_API_URL;
+   if (/^https?:\/\//i.test(hostname)) return hostname.replace(/\/$/, '');
+   return `http://${hostname}:${port}`;
+}
+
+/**
  * Shared JSON request helper. Builds the URL, sets headers, surfaces HTTP errors,
  * and maps connection failures to a friendly, service-specific message.
  */
@@ -85,7 +97,7 @@ async function request<T>(
    { method = 'POST', body, serviceLabel, parseError = false }: RequestOptions
 ): Promise<T> {
    try {
-      const response = await fetch(`http://${hostname}:${port}${path}`, {
+      const response = await fetch(`${apiBase(hostname, port)}${path}`, {
          method,
          headers: { 'Content-Type': 'application/json' },
          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),

@@ -837,6 +837,11 @@ def build_frontend():
     frontend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend')
     if not os.path.exists(os.path.join(frontend_dir, 'package.json')):
         return
+    # Skip building if a prebuilt frontend is already present (e.g. built on a
+    # different host and copied here, where npm may not be available).
+    if os.path.exists(os.path.join(FRONTEND_BUILD_DIR, 'index.html')):
+        log.driver("Frontend build already present, skipping build.")
+        return
     log.driver("Building frontend...")
     subprocess.run(['npm', 'install', '--legacy-peer-deps'], cwd=frontend_dir, check=True)
     subprocess.run(['npm', 'run', 'build'], cwd=frontend_dir, check=True)

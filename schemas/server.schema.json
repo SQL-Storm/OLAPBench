@@ -45,7 +45,7 @@
             },
             "numa_node": {
               "type": "integer",
-              "enum": [1, 2, 3, 4],
+              "enum": [0, 1, 2, 3, 4],
               "description": "NUMA node to bind execution to"
             },
             "index": {

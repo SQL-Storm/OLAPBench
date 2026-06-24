@@ -60,6 +60,7 @@ systems:
     disabled: false
     parameter:
       version: "2022-latest"
+      numa_node: 0
       cpus: 16
       memory: "32G"
 
@@ -68,6 +69,7 @@ systems:
     disabled: false
     parameter:
       version: "2022-latest"
+      numa_node: 0
       force_order: true
       cpus: 16
       memory: "32G"

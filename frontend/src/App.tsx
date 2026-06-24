@@ -29,8 +29,8 @@ const SCHEMA_PLACEHOLDER = '-- Connect to server to load schema';
  */
 export default function App() {
    const [darkMode, setDarkMode] = useState(true);
-   const [hostname, setHostname] = useState('localhost');
-   const [port, setPort] = useState('5000');
+   const [hostname, setHostname] = useState('https://querybrew.db.cit.tum.de/api');
+   const [port, setPort] = useState('443');
    const [isConnected, setIsConnected] = useState(false);
    const [schema, setSchema] = useState(SCHEMA_PLACEHOLDER);
    const [queries, setQueries] = useState<Query[]>([]);

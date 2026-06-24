@@ -9,6 +9,7 @@ import TextField from '@mui/material/TextField';
 import AddIcon from '@mui/icons-material/Add';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
+import GitHubIcon from '@mui/icons-material/GitHub';
 
 interface TitleBarProps {
    handleConnect: () => void;
@@ -114,6 +115,18 @@ export default function TitleBar({
             {isConnected ? '✓ Connected' : 'Connect'}
          </Button>
          <Box sx={{ flexGrow: 1 }} />
+         <Tooltip title="View on GitHub">
+            <IconButton
+               component="a"
+               href="https://github.com/umbra-db/QueryBrew"
+               target="_blank"
+               rel="noopener noreferrer"
+               color="inherit"
+               size="small"
+            >
+               <GitHubIcon />
+            </IconButton>
+         </Tooltip>
          <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
             <IconButton onClick={toggleDarkMode} color="inherit" size="small">
                {darkMode ? <Brightness7Icon /> : <Brightness4Icon />}

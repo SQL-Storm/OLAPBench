@@ -79,6 +79,14 @@
             "umbra_planner_settings": {
               "type": "object",
               "description": "Settings for Umbra planner"
+            },
+            "umbra_planner_statistics": {
+              "type": "boolean",
+              "description": "Collect target DBMS statistics with Umbra statsql and pass them to the Umbra planner"
+            },
+            "umbra_planner_statistics_timeout": {
+              "type": "number",
+              "description": "Timeout in seconds for the target statistics extraction query (0 means no timeout)"
             }
           },
           "additionalProperties": true

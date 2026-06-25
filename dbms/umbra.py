@@ -17,6 +17,15 @@ from util.log import log
 
 
 class Umbra(Postgres):
+    dialects = {
+        "postgres": "postgres",
+        "sqlserver": "sqlserver",
+        "apollo": "sqlserver",
+        "clickhouse": "clickhouse",
+        "duckdb": "duckdb",
+        "singlestore": "mysql",
+    }
+
     class Relation(str, Enum):
         DEFAULT = "default"
         MAPPED = "mapped"
@@ -159,16 +168,26 @@ class Umbra(Postgres):
         else:
             log.dbms_verbose("Using existing umbra database " + self.db, self)
 
-    def plan_query(self, query: str, database: str) -> str:
-        dialects = {
-            "postgres": "postgresql",
-            "sqlserver": "sqlserver",
-            "apollo": "sqlserver",
-            "clickhouse": "clickhouse",
-            "duckdb": "duckdb",
-            "singlestore": "mysql",
-        }
-        dialect = "umbra" if database not in dialects else dialects[database]
+    @staticmethod
+    def _sql_string(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    @staticmethod
+    def _without_trailing_semicolon(query: str) -> str:
+        return query.strip().rstrip(";").rstrip()
+
+    def statsql_query(self, database: str) -> str:
+        dialect = self.dialects.get(database, "umbra")
+        return str(self.execute_scalar(f"select umbra.statsql({self._sql_string(dialect)});"))
+
+    def _add_statistics_option(self, query: str, statistics: str) -> str:
+        query = self._without_trailing_semicolon(query)
+        return f"{query}\noptions (statistics = {self._sql_string(statistics)});"
+
+    def plan_query(self, query: str, database: str, statistics: str = None) -> str:
+        dialect = self.dialects.get(database, "umbra")
+        if statistics is not None:
+            query = self._add_statistics_option(query, statistics)
         res = self._execute(f"explain (sql, dialect {dialect}) {query}", True)
         if res.state != Result.SUCCESS:
             return None
@@ -203,7 +222,8 @@ class UmbraDescription(DBMSDescription):
 
         relation = "_" + relation + (f"_{backend}{blockshift}" if relation == Umbra.Relation.COLUMN else "")
         indexMethod = "_" + indexMethod if indexMethod != Umbra.IndexMethod.BTREE else ""
-        return DBMSDescription.get_database_name(benchmark, params) + relation + indexMethod
+        schema_only = "_schema" if params.get("umbra_schema_only", False) else ""
+        return DBMSDescription.get_database_name(benchmark, params) + relation + indexMethod + schema_only
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser, default_umbra_db: str = None):

@@ -2,6 +2,14 @@
   "$schema": "https://json-schema.org/draft-07/schema",
   "title": "Umbra Benchmark Schema",
   "definitions": {
+    "parameter": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": true
+    },
     "query_plan": {
       "type": "object",
       "properties": {
@@ -89,6 +97,12 @@
             },
             "umbra_planner_settings": {
               "$ref": "#/definitions/settings"
+            },
+            "umbra_planner_statistics": {
+              "type": "boolean"
+            },
+            "umbra_planner_statistics_timeout": {
+              "type": "number"
             }
           }
         },

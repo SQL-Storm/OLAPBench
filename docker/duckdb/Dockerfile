@@ -9,6 +9,7 @@ RUN pip3 install --no-cache-dir fastapi uvicorn simplejson pytz duckdb==${VERSIO
 
 # Setup the entrypoint
 COPY server.py /server.py
+RUN chmod 755 /server.py
 ENTRYPOINT ["python", "/server.py"]
 
 # Expose the DuckDB port

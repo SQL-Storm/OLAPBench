@@ -208,7 +208,7 @@ class UmbraDev(Umbra):
                     return result
 
                 # Parse CSV with space delimiter, quote character ", and NULL representation
-                reader = csv.reader(file, delimiter=' ', quotechar='"')
+                reader = csv.reader(file, delimiter=' ', quotechar='"', escapechar='\\')
                 rows = []
                 for row in reader:
                     # Convert NULL strings to None
@@ -231,7 +231,7 @@ class UmbraDev(Umbra):
 
         return result
 
-    def load_database(self):
+    def _load_database(self, load_data: bool):
         self.db = os.path.join(self._umbra_db, self._database_name + ".db")
         self.db_client = os.path.join(self._umbra_db_client, self._database_name + ".db")
         self.db_exists = os.path.isfile(self.db)
@@ -240,13 +240,16 @@ class UmbraDev(Umbra):
         env = self.umbra_env()
 
         if not self.db_exists:
-            # Create the database and ingest data, then stop so the sample files are flushed to disk.
+            # Create the database and ingest schema/data, then stop so the sample files are flushed to disk.
             command = f'{self.sql} --createdb {self.db_client}'
             log.dbms_verbose(f"Starting umbra with a new database `{command}`", self)
             self.process = Process(command, env=env)
             self.process.start()
             time.sleep(1)
-            super().load_database()
+            if load_data:
+                super().load_database()
+            else:
+                super().load_schema()
             self.process.stop()
             self.process = None
 
@@ -263,6 +266,12 @@ class UmbraDev(Umbra):
         self.process.write(f'set profiling = on;')
         time.sleep(1)
         self.process.read_and_discard()
+
+    def load_schema(self):
+        self._load_database(load_data=False)
+
+    def load_database(self):
+        self._load_database(load_data=True)
 
     def _apply_sample_base(self):
         """Replace this database's .sample files with those of the configured sample_base."""

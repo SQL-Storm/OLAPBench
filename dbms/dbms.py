@@ -244,12 +244,13 @@ class DBMS(ABC):
     def _execute(self, query: str, fetch_result: bool, timeout: int = 0, fetch_result_limit: int = 0) -> Result:
         raise NotImplementedError()
 
-    def load_database(self):
+    def _load_schema_definition(self) -> dict:
         primary_key = self._index in [DBMS.Index.PRIMARY, DBMS.Index.FOREIGN]
         foreign_keys = self._index == DBMS.Index.FOREIGN
         schema = self._benchmark.get_schema(primary_key=primary_key, foreign_keys=foreign_keys)
-        schema = self._transform_schema(schema)
+        return self._transform_schema(schema)
 
+    def _create_schema(self, schema: dict):
         create_stmts = self._create_table_statements(schema)
         for create_statement in create_stmts:
             log.sql_verbose(create_statement)
@@ -257,6 +258,23 @@ class DBMS(ABC):
             if output.state != Result.SUCCESS:
                 log.error(f'Error while creating table: {output.message}')
                 raise Exception(f'Error while creating table: {output.message}')
+
+    def load_schema(self):
+        schema = self._load_schema_definition()
+        self._create_schema(schema)
+        return schema
+
+    def execute_scalar(self, query: str, timeout: int = 0):
+        result = self._execute(query, fetch_result=True, timeout=timeout, fetch_result_limit=1)
+        if result.state != Result.SUCCESS:
+            raise Exception(result.message)
+        if not result.result or not result.result[0]:
+            raise Exception("Query did not return a scalar result")
+        return result.result[0][0]
+
+    def load_database(self):
+        schema = self._load_schema_definition()
+        self._create_schema(schema)
 
         statements = self._copy_statements(schema)
         non_empty_tables = [table for table in schema['tables'] if not table.get("initially empty", False) and not self._benchmark.empty()]

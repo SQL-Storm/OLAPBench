@@ -50,6 +50,53 @@ class Runtime:
     times: List[float] = field(default_factory=lambda: [])
 
 
+def _enabled(value) -> bool:
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on", "target"}
+    return bool(value)
+
+
+def _plan_queries_with_umbra(benchmark: Benchmark, system: System, query_names: list[str], dbms_descriptions: dict,
+                             db_dir: str, data_dir: str, target_dbms=None) -> list[tuple[str, str]]:
+    use_target_statistics = _enabled(system.params.get("umbra_planner_statistics", False))
+    if use_target_statistics and target_dbms is None:
+        raise Exception("Umbra planner target statistics require a loaded target DBMS")
+
+    log.driver("Using Umbra planner" + (" with target statistics" if use_target_statistics else ""))
+    umbra_planner_params = dict(system.params.get("umbra_planner_parameter", {}))
+    umbra_planner_settings = dict(system.params.get("umbra_planner_settings", {}))
+    statistics = None
+    umbra_planned_queries = []
+
+    if use_target_statistics:
+        umbra_planner_params["umbra_schema_only"] = True
+
+    with dbms_descriptions["umbradev"].instantiate(benchmark, db_dir, data_dir, umbra_planner_params, umbra_planner_settings) as umbra:
+        if use_target_statistics:
+            umbra.load_schema()
+
+            stats_query = umbra.statsql_query(system.dbms)
+            log.sql_verbose(stats_query)
+            log.driver(f"Collecting {system.dbms} statistics for Umbra planner")
+            stats_timeout = system.params.get("umbra_planner_statistics_timeout", 0) or 0
+            statistics = str(target_dbms.execute_scalar(stats_query, timeout=stats_timeout))
+        else:
+            umbra.load_database()
+
+        with log.progress("Planning queries...", len(query_names)) as progress:
+            for name in query_names:
+                progress.next(f'Planning {name}...')
+                query = benchmark.read_query(name, "umbra")
+                umbra_query = umbra.plan_query(query, system.dbms, statistics=statistics)
+                if umbra_query is not None:
+                    umbra_planned_queries.append((name, umbra_query))
+                else:
+                    log.warn_verbose(f"Query {name} not supported by Umbra")
+                progress.finish()
+
+    return umbra_planned_queries
+
+
 def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict, result_dir: str, db_dir: str, data_dir: str):
     log.driver(f"Preparing {benchmark.fullname}")
     dbms_descriptions = database_systems()
@@ -126,8 +173,10 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
             # Prepare the benchmark
             match benchmark_type:
                 case "queries":
-                    umbra_planner = system.params.get("umbra_planner", False)
+                    umbra_planner = _enabled(system.params.get("umbra_planner", False))
                     dbms_name = "umbra" if umbra_planner else system.dbms
+                    use_target_statistics = umbra_planner and _enabled(system.params.get("umbra_planner_statistics", False))
+                    umbra_planned_queries = []
 
                     log.driver(f"Loading query names...")
                     query_names = benchmark.query_names()
@@ -144,24 +193,8 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
 
                     # Plan the queries with Umbra
                     # When planning is enabled, all planned queries are loaded into a list in memory for now
-                    if umbra_planner and len(query_names) != 0:
-                        log.driver("Using Umbra planner")
-                        umbra_planner_params = system.params.get("umbra_planner_parameter", {})
-                        umbra_planner_settings = system.params.get("umbra_planner_settings", {})
-                        umbra_planned_queries = []
-                        with dbms_descriptions["umbradev"].instantiate(benchmark, db_dir, data_dir, umbra_planner_params, umbra_planner_settings) as umbra:
-                            umbra.load_database()
-
-                            with log.progress("Planning queries...", len(query_names)) as progress:
-                                for name in query_names:
-                                    progress.next(f'Planning {name}...')
-                                    query = benchmark.read_query(name, dbms_name)
-                                    umbra_query = umbra.plan_query(query, system.dbms)
-                                    if umbra_query is not None:
-                                        umbra_planned_queries.append((name, umbra_query))
-                                    else:
-                                        log.warn_verbose(f"Query {name} not supported by Umbra")
-                                    progress.finish()
+                    if umbra_planner and len(query_names) != 0 and not use_target_statistics:
+                        umbra_planned_queries = _plan_queries_with_umbra(benchmark, system, query_names, dbms_descriptions, db_dir, data_dir)
 
                     if len(query_names) == 0:
                         runtime = runtimes[system.title]
@@ -177,6 +210,9 @@ def run_benchmark(benchmark: Benchmark, systems: List[System], definition: dict,
                 dbms.load_database()
 
                 if benchmark_type == "queries":
+                    if umbra_planner and len(query_names) != 0 and use_target_statistics:
+                        umbra_planned_queries = _plan_queries_with_umbra(benchmark, system, query_names, dbms_descriptions, db_dir, data_dir, target_dbms=dbms)
+
                     log.driver("Benchmarking queries")
 
                     repetitions = definition["repetitions"]

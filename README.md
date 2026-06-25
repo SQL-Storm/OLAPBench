@@ -219,6 +219,45 @@ systems:
 
 This creates 16 different test configurations (4 versions × 4 buffer sizes).
 
+### Umbra Planner With Target Statistics
+
+Umbra can optimize a query for another DBMS and emit the optimized SQL in that
+DBMS's dialect. For high-quality plans, Umbra needs statistics about the data.
+OLAPBench supports two ways to provide those statistics when a system sets
+`umbra_planner: true`.
+
+Without `umbra_planner_statistics`, OLAPBench loads the benchmark data into
+Umbra and lets Umbra use its own statistics. This is useful when running Umbra
+as a normal database system as well as a planner.
+
+With `umbra_planner_statistics: true`, OLAPBench does not load the benchmark
+data into Umbra. It loads the data into the target DBMS, asks Umbra to generate
+one target-dialect statistics query with `umbra.statsql(...)`, runs that query
+once on the target DBMS, and passes the returned statistics string to Umbra when
+planning every benchmark query. This mode is useful when Umbra should plan at
+full quality for a target system without storing a copy of the target data.
+
+For a local Umbra checkout built at `../umbra/bin/sql`, configure the planner
+like this:
+
+```yaml
+systems:
+  - title: "DuckDB (Umbra Planner, target stats)"
+    dbms: duckdb
+    parameter:
+      umbra_planner: true
+      umbra_planner_statistics: true
+      umbra_planner_statistics_timeout: 0
+      umbra_planner_parameter:
+        version: HEAD
+        umbra_src: ../umbra
+        bin: ../umbra/bin
+      umbra_planner_settings:
+        usedirectio: true
+        multiway: d
+        optimizer.sidewayinformationpassing: false
+```
+
 ## Running Benchmarks
 
 ### Command Line Options

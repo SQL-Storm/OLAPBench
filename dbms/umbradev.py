@@ -5,6 +5,7 @@ import math
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
 
@@ -17,6 +18,8 @@ from queryplan.queryplan import QueryPlan
 from util import sql
 from util.log import log
 from util.process import Process
+
+csv.field_size_limit(sys.maxsize)
 
 
 class UmbraDev(Umbra):

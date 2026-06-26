@@ -118,6 +118,7 @@ export function propagateQueryToOutputs(
       editedValue: resolve(out.dbms, baseText),
       originalQuery: resolve(out.dbms, baseText),
       optimizedQuery: null,
+      optimizedStatistics: null,
       queryPlan: null,
       ...(resetAutoRunResults
          ? { queryResult: out.autoRunEnabled === false ? null : out.queryResult }

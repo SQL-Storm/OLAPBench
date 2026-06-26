@@ -94,7 +94,6 @@ export default function App() {
          setActiveDataset(datasetName);
          setQuery('');
          setCurrentQueryIndex(null);
-         // Switch the active DBMS list to the selected dataset's systems
          const benchmark = datasets.find((b) => b.name === datasetName);
          setActiveDbms(buildDbmsWithIds(benchmark?.systems));
          try {
@@ -116,7 +115,6 @@ export default function App() {
          const healthResponse = await checkHealth(hostname, port);
          setDatasets(healthResponse.benchmarks);
 
-         // Use the first benchmark's systems as the active dataset/DBMS
          const firstBenchmark = healthResponse.benchmarks[0];
          const datasetName = firstBenchmark?.name ?? '';
          setActiveDataset(datasetName);
@@ -230,6 +228,9 @@ export default function App() {
                         onPlanFetched={outputs.planFetched}
                         onToggleAutoRun={outputs.toggleAutoRun}
                         onToggleAutoOptimize={outputs.toggleAutoOptimize}
+                        onToggleUseStatistics={outputs.toggleUseStatistics}
+                        onFetchStatistics={outputs.fetchStatistics}
+                        onEditStatisticsDraft={outputs.editStatisticsDraft}
                         isLoading={outputs.isLoading}
                         activeDbms={activeDbms}
                         activeDataset={activeDataset}

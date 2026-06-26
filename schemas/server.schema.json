@@ -126,6 +126,10 @@
       "type": "string",
       "description": "Name of the Umbra/UmbraDev instance to use for query optimization (optional, defaults to first umbra/umbradev instance)"
     },
+    "optimizer_schema_only": {
+      "type": "boolean",
+      "description": "Load the configured optimizer with schema only so it can plan without storing benchmark data"
+    },
     "systems": {
       "type": "array",
       "items": {

@@ -1,11 +1,11 @@
 // QueryBrew (c) 2025
-import { QueryResponse, PlanResponse } from './Api';
+import { PlannerStatisticsResponse, QueryResponse, PlanResponse } from './Api';
 
 /**
  * Result panel view modes: tabular results, the indented plan tree, or the
  * top-down plan graph.
  */
-export type PlanViewMode = 'table' | 'plan' | 'graph';
+export type PlanViewMode = 'table' | 'plan' | 'graph' | 'statistics';
 
 /**
  * State for a single optimized-query output panel. Shared between App (owner) and
@@ -24,4 +24,11 @@ export interface OutputResult {
    queryPlan?: PlanResponse | null;
    autoRunEnabled?: boolean;
    autoOptimize?: boolean;
+   useStatistics?: boolean;
+   plannerStatistics?: PlannerStatisticsResponse | null;
+   statisticsDraft?: string;
+   statisticsEdited?: boolean;
+   statisticsError?: string | null;
+   isLoadingStatistics?: boolean;
+   optimizedStatistics?: string | null;
 }

@@ -20,10 +20,12 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import SchemaIcon from '@mui/icons-material/Schema';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
+import StorageIcon from '@mui/icons-material/Storage';
 import CircularProgress from '@mui/material/CircularProgress';
 import QueryPlanTree from './QueryPlanTree';
 import QueryPlanGraph from './QueryPlanGraph';
-import { QueryResponse, PlanResponse } from '../Api';
+import StatisticsView from './StatisticsView';
+import { PlannerStatisticsResponse, QueryResponse, PlanResponse } from '../Api';
 import { PlanViewMode } from '../types';
 
 // Auto-hiding scrollbar: hidden by default, thin on hover (table + plan views).
@@ -80,6 +82,14 @@ interface QueryResultViewProps {
    onFetchPlan?: () => void;
    viewMode?: PlanViewMode;
    onViewModeChange?: (mode: PlanViewMode) => void;
+   plannerStatistics?: PlannerStatisticsResponse | null;
+   statisticsDraft?: string;
+   statisticsError?: string | null;
+   isLoadingStatistics?: boolean;
+   useStatistics?: boolean;
+   onFetchStatistics?: () => void;
+   onEditStatisticsDraft?: (value: string) => void;
+   onToggleUseStatistics?: (enabled: boolean) => void;
 }
 
 /**
@@ -92,6 +102,14 @@ export default function QueryResultView({
    onFetchPlan,
    viewMode,
    onViewModeChange,
+   plannerStatistics,
+   statisticsDraft = '',
+   statisticsError,
+   isLoadingStatistics,
+   useStatistics,
+   onFetchStatistics,
+   onEditStatisticsDraft,
+   onToggleUseStatistics,
 }: QueryResultViewProps) {
    const [localViewMode, setLocalViewMode] = useState<PlanViewMode>('table');
    const [copied, setCopied] = useState(false);
@@ -118,6 +136,18 @@ export default function QueryResultView({
       }
    }, [isPlanView, queryPlan, onFetchPlan, queryResult, isLoadingPlan]);
 
+   useEffect(() => {
+      if (
+         activeViewMode === 'statistics' &&
+         onFetchStatistics &&
+         !plannerStatistics &&
+         !isLoadingStatistics &&
+         !statisticsError
+      ) {
+         onFetchStatistics();
+      }
+   }, [activeViewMode, plannerStatistics, onFetchStatistics, isLoadingStatistics, statisticsError]);
+
    const handleViewModeChange = (
       _event: React.MouseEvent<HTMLElement>,
       newMode: PlanViewMode | null
@@ -132,33 +162,20 @@ export default function QueryResultView({
          if ((newMode === 'plan' || newMode === 'graph') && !queryPlan && onFetchPlan) {
             onFetchPlan();
          }
+         if (newMode === 'statistics' && !plannerStatistics && onFetchStatistics) {
+            onFetchStatistics();
+         }
       }
    };
 
-   if (!queryResult) {
-      return (
-         <Box
-            sx={{
-               height: '100%',
-               display: 'flex',
-               alignItems: 'center',
-               justifyContent: 'center',
-               color: '#888',
-            }}
-         >
-            <Typography variant="body2">Run a query to see results</Typography>
-         </Box>
-      );
-   }
-
-   const isSuccess = queryResult.status === 'success';
-   const isRunning = queryResult.status === 'running';
+   const isSuccess = queryResult?.status === 'success';
+   const isRunning = queryResult?.status === 'running';
    const statusColor = isSuccess ? 'success' : isRunning ? 'info' : 'error';
 
    // Generate column headers (use provided columns or generate generic ones)
-   const rows = queryResult.result || [];
+   const rows = queryResult?.result || [];
    const columns =
-      queryResult.columns || (rows.length > 0 ? rows[0].map((_, i) => `Column ${i + 1}`) : []);
+      queryResult?.columns || (rows.length > 0 ? rows[0].map((_, i) => `Column ${i + 1}`) : []);
 
    // Copy the result set to the clipboard as tab-separated values (header + rows).
    const handleCopyResults = async () => {
@@ -190,7 +207,7 @@ export default function QueryResultView({
    const gutterWidth = `calc(${String(rows.length).length}ch + 12px)`;
 
    // Show loading state
-   if (isRunning) {
+   if (isRunning && activeViewMode !== 'statistics') {
       return (
          <Box
             sx={{
@@ -217,23 +234,27 @@ export default function QueryResultView({
             }}
          >
             <Stack direction="row" spacing={2} alignItems="center">
-               <Chip
-                  label={queryResult.status.toUpperCase()}
-                  color={statusColor}
-                  size="small"
-                  variant="outlined"
-               />
-               {queryResult.runtime_ms !== undefined && (
+               {queryResult ? (
+                  <Chip
+                     label={queryResult.status.toUpperCase()}
+                     color={statusColor}
+                     size="small"
+                     variant="outlined"
+                  />
+               ) : (
+                  <Chip label="IDLE" size="small" variant="outlined" />
+               )}
+               {queryResult?.runtime_ms !== undefined && (
                   <Typography variant="body2" color="text.secondary">
                      Runtime: {queryResult.runtime_ms.toFixed(2)} ms
                   </Typography>
                )}
-               {queryResult.rows !== undefined && (
+               {queryResult?.rows !== undefined && (
                   <Typography variant="body2" color="text.secondary">
                      Rows: {queryResult.rows}
                   </Typography>
                )}
-               {queryResult.error && (
+               {queryResult?.error && (
                   <Typography variant="body2" color="error">
                      {queryResult.error}
                   </Typography>
@@ -254,34 +275,48 @@ export default function QueryResultView({
                      </IconButton>
                   </Tooltip>
                )}
-               {isSuccess && (
-                  <ToggleButtonGroup
-                     value={activeViewMode}
-                     exclusive
-                     onChange={handleViewModeChange}
-                     size="small"
-                     aria-label="Result view mode"
-                     sx={{ height: 28 }}
-                  >
-                     <ToggleButton value="table" sx={{ px: 1, py: 0.5 }}>
-                        <TableChartIcon sx={{ fontSize: 18, mr: 0.5 }} />
-                        <Typography variant="caption">Results</Typography>
-                     </ToggleButton>
-                     <ToggleButton value="plan" sx={{ px: 1, py: 0.5 }}>
-                        <AccountTreeIcon sx={{ fontSize: 18, mr: 0.5 }} />
-                        <Typography variant="caption">Plan</Typography>
-                     </ToggleButton>
-                     <ToggleButton value="graph" sx={{ px: 1, py: 0.5 }}>
-                        <SchemaIcon sx={{ fontSize: 18, mr: 0.5 }} />
-                        <Typography variant="caption">Graph</Typography>
-                     </ToggleButton>
-                  </ToggleButtonGroup>
-               )}
+               <ToggleButtonGroup
+                  value={activeViewMode}
+                  exclusive
+                  onChange={handleViewModeChange}
+                  size="small"
+                  aria-label="Result view mode"
+                  sx={{ height: 28 }}
+               >
+                  <ToggleButton value="table" sx={{ px: 1, py: 0.5 }}>
+                     <TableChartIcon sx={{ fontSize: 18, mr: 0.5 }} />
+                     <Typography variant="caption">Results</Typography>
+                  </ToggleButton>
+                  <ToggleButton value="plan" sx={{ px: 1, py: 0.5 }}>
+                     <AccountTreeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+                     <Typography variant="caption">Plan</Typography>
+                  </ToggleButton>
+                  <ToggleButton value="graph" sx={{ px: 1, py: 0.5 }}>
+                     <SchemaIcon sx={{ fontSize: 18, mr: 0.5 }} />
+                     <Typography variant="caption">Graph</Typography>
+                  </ToggleButton>
+                  <ToggleButton value="statistics" sx={{ px: 1, py: 0.5 }}>
+                     <StorageIcon sx={{ fontSize: 18, mr: 0.5 }} />
+                     <Typography variant="caption">Statistics</Typography>
+                  </ToggleButton>
+               </ToggleButtonGroup>
             </Stack>
          </Box>
 
-         {/* Content area - Table or Plan view */}
-         {activeViewMode === 'table' ? (
+         {/* Content area - Table, Plan, or Statistics view */}
+         {activeViewMode === 'statistics' ? (
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+               <StatisticsView
+                  statistics={plannerStatistics || null}
+                  draft={statisticsDraft}
+                  draftError={statisticsError}
+                  isLoading={isLoadingStatistics}
+                  useStatistics={useStatistics}
+                  onDraftChange={onEditStatisticsDraft || (() => {})}
+                  onToggleUseStatistics={onToggleUseStatistics}
+               />
+            </Box>
+         ) : activeViewMode === 'table' ? (
             // Table view
             isSuccess && rows.length > 0 ? (
                <TableContainer component={Paper} sx={hiddenScrollbarSx}>
@@ -398,7 +433,19 @@ export default function QueryResultView({
                      Query executed successfully (no rows returned)
                   </Typography>
                </Box>
-            ) : null
+            ) : (
+               <Box
+                  sx={{
+                     flex: 1,
+                     display: 'flex',
+                     alignItems: 'center',
+                     justifyContent: 'center',
+                     color: '#888',
+                  }}
+               >
+                  <Typography variant="body2">Run a query to see results</Typography>
+               </Box>
+            )
          ) : (
             // Plan view
             <Box sx={{ ...hiddenScrollbarSx, p: 0.5 }}>

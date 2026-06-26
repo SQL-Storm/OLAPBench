@@ -21,6 +21,9 @@ interface MultiOutputViewProps {
    onPlanFetched: (outputId: string, plan: PlanResponse | null) => void;
    onToggleAutoRun: (outputId: string, enabled: boolean) => void;
    onToggleAutoOptimize: (outputId: string, enabled: boolean) => void;
+   onToggleUseStatistics: (outputId: string, enabled: boolean) => void;
+   onFetchStatistics: (outputId: string, dbms?: string) => void;
+   onEditStatisticsDraft: (outputId: string, value: string) => void;
    isLoading: boolean;
    activeDbms: ActiveDbms[];
    activeDataset: string;
@@ -45,6 +48,9 @@ export default function MultiOutputView({
    onPlanFetched,
    onToggleAutoRun,
    onToggleAutoOptimize,
+   onToggleUseStatistics,
+   onFetchStatistics,
+   onEditStatisticsDraft,
    isLoading,
    activeDbms,
    activeDataset,
@@ -76,6 +82,14 @@ export default function MultiOutputView({
          onToggleAutoRun={(enabled) => onToggleAutoRun(output.id, enabled)}
          autoOptimize={output.autoOptimize === true}
          onToggleAutoOptimize={(enabled) => onToggleAutoOptimize(output.id, enabled)}
+         useStatistics={output.useStatistics === true}
+         onToggleUseStatistics={(enabled) => onToggleUseStatistics(output.id, enabled)}
+         plannerStatistics={output.plannerStatistics}
+         statisticsDraft={output.statisticsDraft}
+         statisticsError={output.statisticsError}
+         isLoadingStatistics={output.isLoadingStatistics}
+         onFetchStatistics={() => onFetchStatistics(output.id, output.dbms)}
+         onEditStatisticsDraft={(value) => onEditStatisticsDraft(output.id, value)}
          originalQuery={output.originalQuery}
          optimizedQuery={output.optimizedQuery}
          onRevertOptimizedQuery={() => onRevertOptimizedQuery(output.id)}

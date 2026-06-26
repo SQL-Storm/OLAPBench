@@ -16,13 +16,19 @@ import {
    optimize,
    runQuery,
    getQueryPlan,
+   getPlannerStatistics,
    ActiveDbms,
    type BenchmarkInfo,
    QueryResponse,
+   PlannerStatisticsResponse,
 } from './Api';
 import { LAYOUT } from './constants';
 import { PlanResult } from './Components/QueryResultView';
 import { safeFormatSQL } from './utils/sqlFormat';
+import {
+   formatJsonTextPreservingContent,
+   stripJsonWhitespaceOutsideStrings,
+} from './utils/jsonFormat';
 
 interface OutputResult {
    id: string;
@@ -33,10 +39,61 @@ interface OutputResult {
    originalQuery?: string; // Unoptimized query text (used for optimization)
    optimizedQuery?: string | null; // Cached optimized query for originalQuery+DBMS
    queryResult?: QueryResponse | null; // Result from running the query
-   viewMode?: 'table' | 'plan';
+   viewMode?: 'table' | 'plan' | 'statistics';
    queryPlan?: PlanResult | null;
    autoRunEnabled?: boolean;
    autoOptimize?: boolean;
+   useStatistics?: boolean;
+   plannerStatistics?: PlannerStatisticsResponse | null;
+   statisticsDraft?: string;
+   statisticsEdited?: boolean;
+   statisticsError?: string | null;
+   isLoadingStatistics?: boolean;
+   optimizedStatistics?: string | null;
+}
+
+function buildActiveDbms(systems: BenchmarkInfo['systems'] = []): ActiveDbms[] {
+   const nameCounts: Record<string, number> = {};
+   return systems
+      .filter((sys) => !sys.planner_only)
+      .map((sys) => {
+         nameCounts[sys.name] = (nameCounts[sys.name] || 0) + 1;
+         const count = nameCounts[sys.name];
+         return {
+            title: sys.title,
+            name: sys.name,
+            id: count === 1 ? sys.name : `${sys.name}-${count}`,
+            planner_only: sys.planner_only,
+            statistics_status: sys.statistics_status,
+            statistics_available: sys.statistics_available,
+         };
+      });
+}
+
+function sqlStringLiteral(value: string): string {
+   return `'${value.replace(/'/g, "''")}'`;
+}
+
+function appendStatisticsOption(query: string, statistics: string): string {
+   const baseQuery = query.trim().replace(/;+$/, '').trim();
+   return `${baseQuery}\noptions (statistics = ${sqlStringLiteral(statistics)});`;
+}
+
+function formatStatisticsDraft(response: PlannerStatisticsResponse): string {
+   if (response.statistics) {
+      return formatJsonTextPreservingContent(response.statistics);
+   }
+   return '';
+}
+
+function statisticsStringOrEmptyError(value: string): {
+   statistics: string | null;
+   error: string | null;
+} {
+   if (!value.trim()) {
+      return { statistics: null, error: 'Statistics JSON is empty' };
+   }
+   return { statistics: stripJsonWhitespaceOutsideStrings(value), error: null };
 }
 
 /**
@@ -78,6 +135,13 @@ export default function App() {
          queryPlan: null,
          autoRunEnabled: true,
          autoOptimize: false,
+         useStatistics: true,
+         plannerStatistics: null,
+         statisticsDraft: '',
+         statisticsEdited: false,
+         statisticsError: null,
+         isLoadingStatistics: false,
+         optimizedStatistics: null,
       },
    ]);
 
@@ -146,6 +210,7 @@ export default function App() {
                editedValue: resolveQueryForDbms(out.dbms, query),
                originalQuery: resolveQueryForDbms(out.dbms, query),
                optimizedQuery: null,
+               optimizedStatistics: null,
                queryPlan: null,
                queryResult: out.autoRunEnabled === false ? null : out.queryResult,
             }))
@@ -219,17 +284,7 @@ export default function App() {
          // Switch the active DBMS list to the selected dataset's systems
          setDatasets((prev) => {
             const benchmark = prev.find((b) => b.name === datasetName);
-            const nameCounts: Record<string, number> = {};
-            const dbmsWithIds = (benchmark?.systems ?? []).map((sys) => {
-               nameCounts[sys.name] = (nameCounts[sys.name] || 0) + 1;
-               const count = nameCounts[sys.name];
-               return {
-                  title: sys.title,
-                  name: sys.name,
-                  id: count === 1 ? sys.name : `${sys.name}-${count}`,
-               };
-            });
-            setActiveDbms(dbmsWithIds);
+            setActiveDbms(buildActiveDbms(benchmark?.systems ?? []));
             return prev;
          });
          try {
@@ -260,17 +315,7 @@ export default function App() {
          setActiveDataset(datasetName);
 
          // Build activeDbms from first dataset's systems
-         const nameCounts: Record<string, number> = {};
-         const dbmsWithIds = (firstBenchmark?.systems ?? []).map((sys) => {
-            nameCounts[sys.name] = (nameCounts[sys.name] || 0) + 1;
-            const count = nameCounts[sys.name];
-            return {
-               title: sys.title,
-               name: sys.name,
-               id: count === 1 ? sys.name : `${sys.name}-${count}`,
-            };
-         });
-         setActiveDbms(dbmsWithIds);
+         setActiveDbms(buildActiveDbms(firstBenchmark?.systems ?? []));
 
          const loadedQueries = await loadDataset(datasetName);
          setIsConnected(true);
@@ -300,6 +345,165 @@ export default function App() {
       setActiveDataset('');
       setActiveDbms([]);
    }, []);
+
+   const fetchStatisticsForOutput = useCallback(
+      async (outputId: string, dbmsId?: string) => {
+         const output = outputs.find((out) => out.id === outputId);
+         const selectedDbms = activeDbms.find((d) => d.id === (dbmsId || output?.dbms));
+
+         if (!selectedDbms) {
+            setOutputs((prev) =>
+               prev.map((out) =>
+                  out.id === outputId
+                     ? {
+                          ...out,
+                          statisticsError: 'Please select a target database',
+                          isLoadingStatistics: false,
+                       }
+                     : out
+               )
+            );
+            return;
+         }
+
+         setOutputs((prev) =>
+            prev.map((out) =>
+               out.id === outputId
+                  ? { ...out, isLoadingStatistics: true, statisticsError: null }
+                  : out
+            )
+         );
+
+         try {
+            const response = await getPlannerStatistics(
+               selectedDbms.title,
+               hostname,
+               port,
+               activeDataset || undefined
+            );
+            const draft = formatStatisticsDraft(response);
+            setOutputs((prev) =>
+               prev.map((out) =>
+                  out.id === outputId
+                     ? {
+                          ...out,
+                          plannerStatistics: response,
+                          statisticsDraft: draft,
+                          statisticsEdited: false,
+                          statisticsError:
+                             response.status === 'success'
+                                ? null
+                                : response.error || 'Failed to load planner statistics',
+                          isLoadingStatistics: false,
+                          optimizedStatistics: null,
+                       }
+                     : out
+               )
+            );
+         } catch (e: any) {
+            const errorMessage = e?.message || 'Failed to load planner statistics';
+            setOutputs((prev) =>
+               prev.map((out) =>
+                  out.id === outputId
+                     ? {
+                          ...out,
+                          statisticsError: errorMessage,
+                          isLoadingStatistics: false,
+                       }
+                     : out
+               )
+            );
+         }
+      },
+      [outputs, activeDbms, hostname, port, activeDataset]
+   );
+
+   const getStatisticsForOptimization = useCallback(
+      async (output: OutputResult | undefined, selectedDbms?: ActiveDbms) => {
+         if (!output?.useStatistics) {
+            return { statistics: null as string | null, error: null as string | null };
+         }
+
+         if (output.plannerStatistics || output.statisticsDraft?.trim()) {
+            const rawStatistics = output.plannerStatistics?.statistics || '';
+            const draftStatistics = output.statisticsDraft || '';
+            if (output.statisticsEdited) {
+               return statisticsStringOrEmptyError(draftStatistics);
+            }
+
+            const statistics = rawStatistics || draftStatistics;
+            if (!statistics) {
+               return { statistics: null, error: 'Statistics JSON is empty' };
+            }
+            return { statistics, error: null };
+         }
+
+         if (!selectedDbms) {
+            return {
+               statistics: null as string | null,
+               error: 'Please select a target database',
+            };
+         }
+
+         setOutputs((prev) =>
+            prev.map((out) =>
+               out.id === output.id
+                  ? { ...out, isLoadingStatistics: true, statisticsError: null }
+                  : out
+            )
+         );
+
+         try {
+            const response = await getPlannerStatistics(
+               selectedDbms.title,
+               hostname,
+               port,
+               activeDataset || undefined
+            );
+            const draft = formatStatisticsDraft(response);
+            const statisticsError =
+               response.status === 'success'
+                  ? null
+                  : response.error || 'Failed to load planner statistics';
+
+            setOutputs((prev) =>
+               prev.map((out) =>
+                  out.id === output.id
+                     ? {
+                          ...out,
+                          plannerStatistics: response,
+                          statisticsDraft: draft,
+                          statisticsEdited: false,
+                          statisticsError,
+                          isLoadingStatistics: false,
+                          optimizedStatistics: null,
+                       }
+                     : out
+               )
+            );
+
+            return {
+               statistics: response.statistics || draft,
+               error: response.status === 'success' ? null : statisticsError,
+            };
+         } catch (e: any) {
+            const statisticsError = e?.message || 'Failed to load planner statistics';
+            setOutputs((prev) =>
+               prev.map((out) =>
+                  out.id === output.id
+                     ? {
+                          ...out,
+                          statisticsError,
+                          isLoadingStatistics: false,
+                       }
+                     : out
+               )
+            );
+            return { statistics: null as string | null, error: statisticsError };
+         }
+      },
+      [hostname, port, activeDataset]
+   );
 
    const handleRun = useCallback(
       async (
@@ -371,17 +575,41 @@ export default function App() {
          try {
             const shouldAutoOptimize = Boolean(output?.autoOptimize);
             const normalizedBaseQuery = baseQuery.trim();
+            const { statistics, error: statisticsError } = await getStatisticsForOptimization(
+               output,
+               selectedDbms
+            );
+
+            if (statisticsError) {
+               setOutputs((prev) =>
+                  prev.map((out) =>
+                     out.id === outputId
+                        ? {
+                             ...out,
+                             statisticsError,
+                             queryResult: { status: 'error', error: statisticsError },
+                          }
+                        : out
+                  )
+               );
+               return { success: false, query: queryToRun };
+            }
 
             if (shouldAutoOptimize) {
+               const statisticsKey = statistics || null;
+               const optimizerInput = statistics
+                  ? appendStatisticsOption(baseQuery, statistics)
+                  : baseQuery;
                const canReuseOptimized =
                   Boolean(output?.optimizedQuery) &&
-                  (output?.originalQuery || '').trim() === normalizedBaseQuery;
+                  (output?.originalQuery || '').trim() === normalizedBaseQuery &&
+                  (output?.optimizedStatistics || null) === statisticsKey;
 
                if (canReuseOptimized) {
                   queryToRun = output?.optimizedQuery || queryToRun;
                } else {
                   const optimizeResponse = await optimize(
-                     baseQuery,
+                     optimizerInput,
                      selectedDbms.name,
                      hostname,
                      port,
@@ -406,6 +634,7 @@ export default function App() {
                                 error: null,
                                 originalQuery: baseQuery,
                                 optimizedQuery: optimizedQueryText,
+                                optimizedStatistics: statisticsKey,
                              }
                            : out
                      )
@@ -457,7 +686,16 @@ export default function App() {
             setIsLoading(false);
          }
       },
-      [outputs, hostname, port, activeDbms, activeDataset, parsedTimeout, parsedResultLimit]
+      [
+         outputs,
+         hostname,
+         port,
+         activeDbms,
+         activeDataset,
+         parsedTimeout,
+         parsedResultLimit,
+         getStatisticsForOptimization,
+      ]
    );
 
    const fetchPlanForOutput = useCallback(
@@ -533,8 +771,25 @@ export default function App() {
                throw new Error('No valid query to optimize');
             }
 
+            const { statistics, error: statisticsError } = await getStatisticsForOptimization(
+               output,
+               selectedDbms
+            );
+            if (statisticsError) {
+               setOutputs((prev) =>
+                  prev.map((out) =>
+                     out.id === outputId ? { ...out, statisticsError } : out
+                  )
+               );
+               throw new Error(statisticsError);
+            }
+            const statisticsKey = statistics || null;
+            const optimizerInput = statistics
+               ? appendStatisticsOption(baseQueryText, statistics)
+               : baseQueryText;
+
             const response = await optimize(
-               baseQueryText,
+               optimizerInput,
                selectedDbms.name,
                hostname,
                port,
@@ -554,6 +809,7 @@ export default function App() {
                              dbms: dbmsId,
                              originalQuery: baseQueryText,
                              optimizedQuery: optimizedQueryText,
+                             optimizedStatistics: statisticsKey,
                           }
                         : out
                   )
@@ -602,7 +858,17 @@ export default function App() {
             setIsLoading(false);
          }
       },
-      [query, hostname, port, activeDbms, activeDataset, outputs, parsedTimeout, parsedResultLimit]
+      [
+         query,
+         hostname,
+         port,
+         activeDbms,
+         activeDataset,
+         outputs,
+         parsedTimeout,
+         parsedResultLimit,
+         getStatisticsForOptimization,
+      ]
    );
 
    const handleRunAll = useCallback(
@@ -620,6 +886,7 @@ export default function App() {
                   editedValue: resolveQueryForDbms(out.dbms, baseQueryText),
                   originalQuery: resolveQueryForDbms(out.dbms, baseQueryText),
                   optimizedQuery: null,
+                  optimizedStatistics: null,
                   queryPlan: null,
                }))
             );
@@ -660,6 +927,7 @@ export default function App() {
                   editedValue: resolveQueryForDbms(out.dbms, baseQueryText),
                   originalQuery: resolveQueryForDbms(out.dbms, baseQueryText),
                   optimizedQuery: null,
+                  optimizedStatistics: null,
                   queryPlan: null,
                   queryResult: out.autoRunEnabled === false ? null : out.queryResult,
                }))
@@ -716,6 +984,13 @@ export default function App() {
             queryPlan: null,
             autoRunEnabled: true,
             autoOptimize: false,
+            useStatistics: true,
+            plannerStatistics: null,
+            statisticsDraft: '',
+            statisticsEdited: false,
+            statisticsError: null,
+            isLoadingStatistics: false,
+            optimizedStatistics: null,
          },
       ]);
    }, [outputs, query, activeDbms, resolveQueryForDbms]);
@@ -740,6 +1015,7 @@ export default function App() {
                editedValue,
                originalQuery: editedValue,
                optimizedQuery: null,
+               optimizedStatistics: null,
                queryPlan: null,
             };
          })
@@ -764,6 +1040,13 @@ export default function App() {
                   queryResult: out.autoRunEnabled === false ? null : out.queryResult,
                   queryPlan: out.autoRunEnabled === false ? null : out.queryPlan,
                   optimizedQuery: null,
+                  optimizedStatistics: null,
+                  useStatistics: true,
+                  plannerStatistics: null,
+                  statisticsDraft: '',
+                  statisticsEdited: false,
+                  statisticsError: null,
+                  isLoadingStatistics: false,
                   ...(shouldUpdateQuery
                      ? {
                           result: nextResolved,
@@ -779,7 +1062,7 @@ export default function App() {
       [query, resolveQueryForDbms]
    );
 
-   const handleViewModeChange = useCallback((outputId: string, mode: 'table' | 'plan') => {
+   const handleViewModeChange = useCallback((outputId: string, mode: 'table' | 'plan' | 'statistics') => {
       setOutputs((prev) =>
          prev.map((out) => (out.id === outputId ? { ...out, viewMode: mode } : out))
       );
@@ -802,6 +1085,7 @@ export default function App() {
                result: originalQuery,
                editedValue: originalQuery,
                optimizedQuery: null,
+               optimizedStatistics: null,
                queryPlan: null,
             };
          })
@@ -831,6 +1115,44 @@ export default function App() {
                ? {
                     ...out,
                     autoOptimize: enabled,
+                 }
+               : out
+         )
+      );
+   }, []);
+
+   const handleToggleUseStatistics = useCallback(
+      (outputId: string, enabled: boolean) => {
+         const output = outputs.find((out) => out.id === outputId);
+         setOutputs((prev) =>
+            prev.map((out) =>
+               out.id === outputId
+                  ? {
+                       ...out,
+                       useStatistics: enabled,
+                    }
+                  : out
+            )
+         );
+
+         if (enabled && output && !output.plannerStatistics && !output.isLoadingStatistics) {
+            void fetchStatisticsForOutput(outputId, output.dbms);
+         }
+      },
+      [outputs, fetchStatisticsForOutput]
+   );
+
+   const handleEditStatisticsDraft = useCallback((outputId: string, value: string) => {
+      setOutputs((prev) =>
+         prev.map((out) =>
+            out.id === outputId
+               ? {
+                    ...out,
+                    useStatistics: true,
+                    statisticsDraft: value,
+                    statisticsEdited: true,
+                    statisticsError: null,
+                    optimizedStatistics: null,
                  }
                : out
          )
@@ -925,6 +1247,9 @@ export default function App() {
                         onPlanFetched={handlePlanFetched}
                         onToggleAutoRun={handleToggleAutoRun}
                         onToggleAutoOptimize={handleToggleAutoOptimize}
+                        onToggleUseStatistics={handleToggleUseStatistics}
+                        onFetchStatistics={fetchStatisticsForOutput}
+                        onEditStatisticsDraft={handleEditStatisticsDraft}
                         isLoading={isLoading}
                         activeDbms={activeDbms}
                         hostname={hostname}

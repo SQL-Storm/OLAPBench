@@ -21,12 +21,21 @@ export interface ActiveDbms {
    id: string; // Unique identifier (e.g., "duckdb-1", "duckdb-2")
    title: string;
    name: string;
+   planner_only?: boolean;
+   statistics_status?: string;
+   statistics_available?: boolean;
 }
 
 export interface BenchmarkInfo {
    name: string;
    fullname: string;
-   systems: { title: string; name: string }[];
+   systems: {
+      title: string;
+      name: string;
+      planner_only?: boolean;
+      statistics_status?: string;
+      statistics_available?: boolean;
+   }[];
    optimizer: string | null;
 }
 
@@ -207,6 +216,28 @@ export interface PlanResponse {
    error?: string;
 }
 
+export interface PlannerStatisticsResponse {
+   status: string;
+   target_dbms: string;
+   target_dbms_name?: string;
+   target_version?: string;
+   optimizer?: string | null;
+   dialect?: string | null;
+   collection_method?: string | null;
+   statistics?: string;
+   statsql_call?: string | null;
+   statsql_query?: string | null;
+   statsql_error?: string | null;
+   statjson_call?: string | null;
+   statjson_error?: string | null;
+   cache?: {
+      hit?: boolean;
+      path?: string;
+      fingerprint?: string;
+   };
+   error?: string;
+}
+
 /**
  * Get query plan via API
  */
@@ -240,6 +271,44 @@ export async function getQueryPlan(
    } catch (error: any) {
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
          throw new Error('Unable to connect to plan service. Please ensure the server is running.');
+      }
+      throw error;
+   }
+}
+
+/**
+ * Get cached Umbra planner statistics for a target DBMS
+ */
+export async function getPlannerStatistics(
+   targetDbms: string,
+   hostname: string,
+   port: string,
+   dataset?: string
+): Promise<PlannerStatisticsResponse> {
+   const body: Record<string, string> = { target_dbms: targetDbms };
+   if (dataset) body.dataset = dataset;
+   const apiUrl = `http://${hostname}:${port}`;
+
+   try {
+      const response = await fetch(`${apiUrl}/planner/statistics`, {
+         method: 'POST',
+         headers: {
+            'Content-Type': 'application/json',
+         },
+         body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+         const errorData = await response.json().catch(() => ({}));
+         throw new Error(errorData.error || `Server responded with status ${response.status}`);
+      }
+
+      return await response.json();
+   } catch (error: any) {
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+         throw new Error(
+            'Unable to connect to planner statistics service. Please ensure the server is running.'
+         );
       }
       throw error;
    }

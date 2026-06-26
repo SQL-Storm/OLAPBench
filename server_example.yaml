@@ -5,11 +5,17 @@ benchmark:
   name: tpch
   scale: 0.01
 
-# Optional: specify which Umbra/UmbraDev instance to use for query optimization
-# If not specified, the first umbra or umbradev instance will be used
-# optimizer: "Umbra latest"
+# Use an empty Umbra as a schema-only optimizer. Target DBMS instances still load data,
+# and the frontend can pass cached /planner/statistics JSON into /optimize.
+optimizer: Umbra (empty optimizer)
+optimizer_schema_only: true
 
 systems:
+  - title: Umbra (empty optimizer)
+    dbms: umbradev
+    disabled: false
+    settings: {}
+
   - title: Umbra
     dbms: umbradev
     disabled: false
@@ -18,9 +24,12 @@ systems:
   - title: DuckDB
     dbms: duckdb
     disabled: false
+    settings:
+      max_expression_depth: 10000
 
   - title: DuckDB (no join optimizer)
     dbms: duckdb
     disabled: false
     settings:
+      max_expression_depth: 10000
       disabled_optimizers: "join_order,build_side_probe_side"

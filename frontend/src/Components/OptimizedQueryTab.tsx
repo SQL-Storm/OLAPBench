@@ -11,12 +11,13 @@ import AutoFixHigh from '@mui/icons-material/AutoFixHigh';
 import CodeIcon from '@mui/icons-material/Code';
 import UndoIcon from '@mui/icons-material/Undo';
 import AutoModeIcon from '@mui/icons-material/AutoMode';
+import StorageIcon from '@mui/icons-material/Storage';
 import MonacoEditor from '@monaco-editor/react';
 import { useTheme } from '@mui/material/styles';
 import Dropdown from './Dropdown';
 import ResizablePanels from './ResizablePanels';
 import QueryResultView, { PlanResult } from './QueryResultView';
-import { ActiveDbms, QueryResponse, getQueryPlan } from '../Api';
+import { ActiveDbms, PlannerStatisticsResponse, QueryResponse, getQueryPlan } from '../Api';
 import { safeFormatSQL } from '../utils/sqlFormat';
 
 interface OptimizedQueryTabProps {
@@ -36,14 +37,22 @@ interface OptimizedQueryTabProps {
    hostname: string;
    port: string;
    timeout: number;
-   viewMode?: 'table' | 'plan';
-   onViewModeChange: (mode: 'table' | 'plan') => void;
+   viewMode?: 'table' | 'plan' | 'statistics';
+   onViewModeChange: (mode: 'table' | 'plan' | 'statistics') => void;
    queryPlan?: PlanResult | null;
    onPlanFetched: (plan: PlanResult | null) => void;
    autoRunEnabled: boolean;
    onToggleAutoRun: (enabled: boolean) => void;
    autoOptimize: boolean;
    onToggleAutoOptimize: (enabled: boolean) => void;
+   useStatistics: boolean;
+   onToggleUseStatistics: (enabled: boolean) => void;
+   plannerStatistics?: PlannerStatisticsResponse | null;
+   statisticsDraft?: string;
+   statisticsError?: string | null;
+   isLoadingStatistics?: boolean;
+   onFetchStatistics: () => void;
+   onEditStatisticsDraft: (value: string) => void;
    originalQuery?: string;
    optimizedQuery?: string | null;
    onRevertOptimizedQuery: () => void;
@@ -76,6 +85,14 @@ export default function OptimizedQueryTab({
    onToggleAutoRun,
    autoOptimize,
    onToggleAutoOptimize,
+   useStatistics,
+   onToggleUseStatistics,
+   plannerStatistics,
+   statisticsDraft,
+   statisticsError,
+   isLoadingStatistics,
+   onFetchStatistics,
+   onEditStatisticsDraft,
    originalQuery,
    optimizedQuery,
    onRevertOptimizedQuery,
@@ -374,6 +391,23 @@ export default function OptimizedQueryTab({
                         <AutoModeIcon sx={{ fontSize: 18 }} />
                      </Button>
                   </Tooltip>
+                  <Tooltip
+                     title={
+                        useStatistics
+                           ? 'Planner statistics enabled for optimization'
+                           : 'Planner statistics disabled for optimization'
+                     }
+                  >
+                     <Button
+                        sx={{ height: '32px', minWidth: isCompact ? '36px' : '40px', px: 1 }}
+                        color={useStatistics ? 'secondary' : 'inherit'}
+                        onClick={() => onToggleUseStatistics(!useStatistics)}
+                        aria-pressed={useStatistics}
+                        aria-label="Toggle planner statistics"
+                     >
+                        <StorageIcon sx={{ fontSize: 18 }} />
+                     </Button>
+                  </Tooltip>
                </ButtonGroup>
                {showCloseButton && onClose && (
                   <IconButton
@@ -496,6 +530,14 @@ export default function OptimizedQueryTab({
                   onFetchPlan={handleFetchPlan}
                   viewMode={viewMode}
                   onViewModeChange={onViewModeChange}
+                  plannerStatistics={plannerStatistics}
+                  statisticsDraft={statisticsDraft}
+                  statisticsError={statisticsError}
+                  isLoadingStatistics={isLoadingStatistics}
+                  useStatistics={useStatistics}
+                  onFetchStatistics={onFetchStatistics}
+                  onEditStatisticsDraft={onEditStatisticsDraft}
+                  onToggleUseStatistics={onToggleUseStatistics}
                />
             </ResizablePanels>
          </Box>

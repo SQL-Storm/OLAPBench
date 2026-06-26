@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import hashlib
+import json
 import os
+import re
 import sys
 import threading
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, send_from_directory, send_file
@@ -40,6 +43,8 @@ benchmark_instances: Dict[str, Benchmark] = {}  # dataset_name -> Benchmark
 optimizer_dbms_name: Dict[str, Optional[str]] = {}  # dataset_name -> optimizer title
 dbms_lock = threading.Lock()  # Lock for modifying the above dicts
 dbms_restart_configs: Dict[tuple[str, str], dict] = {}  # (dataset_name, title) -> restart config
+planner_only_systems: set[tuple[str, str]] = set()  # (dataset_name, title)
+planner_statistics_cache: Dict[tuple[str, str], dict] = {}  # (dataset_name, target title) -> stats record
 
 
 def cleanup_dbms():
@@ -87,10 +92,16 @@ def restart_dbms(dataset_name: str, title: str) -> Optional[str]:
                 benchmark, config['db_dir'], config['data_dir'], config['params'], config['settings']
             )
             dbms.__enter__()
-            log.driver(f"Loading database for {title}...")
-            dbms.load_database()
+            planner_only = config.get('planner_only', False)
+            log.driver(f"Loading {'schema' if planner_only else 'database'} for {title}...")
+            if planner_only:
+                dbms.load_schema()
+            else:
+                dbms.load_database()
             with dbms_lock:
                 active_dbms[key] = dbms
+                if planner_only:
+                    planner_only_systems.add(key)
             log.driver(f"✓ {title} restarted successfully")
             return None
         except Exception as e:
@@ -130,6 +141,225 @@ def resolve_dataset(dataset_name: Optional[str]):
     )
 
 
+def _safe_path_component(value: str) -> str:
+    component = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('._')
+    return component or 'default'
+
+
+def _stable_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, default=str, separators=(',', ':'))
+
+
+def _hash_text(value: str) -> str:
+    return hashlib.sha256(value.encode('utf-8')).hexdigest()
+
+
+def _filtered_params(params: dict) -> dict:
+    return {key: value for key, value in params.items() if key != 'host_port'}
+
+
+def _statistics_cache_dir(dataset_name: str, target_title: str) -> str:
+    bench = benchmark_instances[dataset_name]
+    config = dbms_restart_configs.get((dataset_name, target_title), {})
+    db_dir = config.get('db_dir', os.path.join(workdir, 'db'))
+    return os.path.join(
+        db_dir,
+        'planner_statistics',
+        _safe_path_component(bench.result_name),
+        _safe_path_component(target_title),
+    )
+
+
+def _statistics_record(
+    metadata: dict,
+    statistics: str,
+    cache_dir: str,
+    cache_hit: bool,
+) -> dict:
+    return {
+        'status': 'success',
+        'target_dbms': metadata.get('target_dbms'),
+        'target_dbms_name': metadata.get('target_dbms_name'),
+        'target_version': metadata.get('target_version'),
+        'optimizer': metadata.get('optimizer'),
+        'dialect': metadata.get('dialect'),
+        'collection_method': metadata.get('collection_method'),
+        'statistics': statistics,
+        'statsql_call': metadata.get('statsql_call'),
+        'statsql_query': metadata.get('statsql_query'),
+        'statsql_error': metadata.get('statsql_error'),
+        'statjson_call': metadata.get('statjson_call'),
+        'statjson_error': metadata.get('statjson_error'),
+        'cache': {
+            'hit': cache_hit,
+            'path': cache_dir,
+            'fingerprint': metadata.get('fingerprint'),
+        },
+    }
+
+
+def _read_cached_statistics(cache_dir: str, fingerprint: str) -> Optional[dict]:
+    metadata_path = os.path.join(cache_dir, 'metadata.json')
+    statistics_path = os.path.join(cache_dir, 'statistics.json')
+    if not os.path.exists(metadata_path) or not os.path.exists(statistics_path):
+        return None
+
+    try:
+        with open(metadata_path, 'r') as metadata_file:
+            metadata = json.load(metadata_file)
+        if metadata.get('fingerprint') != fingerprint:
+            return None
+        with open(statistics_path, 'r') as statistics_file:
+            statistics = statistics_file.read()
+        return _statistics_record(metadata, statistics, cache_dir, cache_hit=True)
+    except Exception as e:
+        log.warn(f"Could not read planner statistics cache {cache_dir}: {e}")
+        return None
+
+
+def _write_cached_statistics(cache_dir: str, metadata: dict, statistics: str) -> dict:
+    os.makedirs(cache_dir, exist_ok=True)
+    with open(os.path.join(cache_dir, 'metadata.json'), 'w') as metadata_file:
+        json.dump(metadata, metadata_file, indent=2, sort_keys=True, default=str)
+        metadata_file.write('\n')
+    with open(os.path.join(cache_dir, 'statistics.json'), 'w') as statistics_file:
+        statistics_file.write(statistics)
+    if metadata.get('statsql_query'):
+        with open(os.path.join(cache_dir, 'statsql.sql'), 'w') as statsql_file:
+            statsql_file.write(metadata['statsql_query'])
+            if not metadata['statsql_query'].endswith('\n'):
+                statsql_file.write('\n')
+    return _statistics_record(metadata, statistics, cache_dir, cache_hit=False)
+
+
+def _is_umbra_dbms(dbms: DBMS) -> bool:
+    return getattr(dbms, 'name', None) == 'umbra'
+
+
+def _stats_fingerprint(
+    dataset_name: str,
+    target_title: str,
+    metadata: dict,
+    target_config: dict,
+    optimizer_config: Optional[dict],
+) -> tuple[str, dict]:
+    bench = benchmark_instances[dataset_name]
+    schema = bench.get_schema(primary_key=False, foreign_keys=False)
+    payload = {
+        'benchmark': bench.result_name,
+        'schema_hash': _hash_text(_stable_json(schema)),
+        'target': {
+            'title': target_title,
+            'dbms_name': metadata.get('target_dbms_name'),
+            'version': metadata.get('target_version'),
+            'params': _filtered_params(target_config.get('params', {})),
+            'settings': target_config.get('settings', {}),
+        },
+        'optimizer': {
+            'title': metadata.get('optimizer'),
+            'params': _filtered_params((optimizer_config or {}).get('params', {})),
+            'settings': (optimizer_config or {}).get('settings', {}),
+        },
+        'calls': {
+            'statsql_call': metadata.get('statsql_call'),
+            'statsql_query_hash': _hash_text(metadata.get('statsql_query') or ''),
+            'statjson_call': metadata.get('statjson_call'),
+        },
+    }
+    return _hash_text(_stable_json(payload)), payload
+
+
+def get_or_collect_planner_statistics(dataset_name: str, target_title: str) -> dict:
+    with dbms_lock:
+        target_key = (dataset_name, target_title)
+        if target_key not in active_dbms:
+            available = [title for (d, title) in active_dbms if d == dataset_name]
+            raise Exception(f'DBMS "{target_title}" is not active for dataset "{dataset_name}". Available: {available}')
+
+        target = active_dbms[target_key]
+        target_lock = dbms_locks[target_key]
+        target_config = dbms_restart_configs.get(target_key, {})
+        target_name = target.name
+        target_version = target.version
+        optimizer_title = optimizer_dbms_name.get(dataset_name)
+        optimizer_key = (dataset_name, optimizer_title) if optimizer_title else None
+        optimizer = active_dbms.get(optimizer_key) if optimizer_key else None
+        optimizer_lock = dbms_locks.get(optimizer_key) if optimizer_key else None
+        optimizer_config = dbms_restart_configs.get(optimizer_key, {}) if optimizer_key else None
+
+    cache_dir = _statistics_cache_dir(dataset_name, target_title)
+    metadata = {
+        'target_dbms': target_title,
+        'target_dbms_name': target_name,
+        'target_version': target_version,
+        'optimizer': optimizer_title,
+        'dialect': None,
+        'collection_method': None,
+        'statsql_call': None,
+        'statsql_query': None,
+        'statsql_error': None,
+        'statjson_call': None,
+        'statjson_error': None,
+    }
+
+    if _is_umbra_dbms(target):
+        metadata['dialect'] = 'umbra'
+        metadata['collection_method'] = 'statjson'
+        metadata['statjson_call'] = target.statjson_call() if hasattr(target, 'statjson_call') else 'select umbra.statjson();'
+        metadata['statsql_call'] = target.statsql_call() if hasattr(target, 'statsql_call') else 'select umbra.statsql();'
+        with target_lock:
+            if hasattr(target, 'statsql_query'):
+                try:
+                    metadata['statsql_query'] = target.statsql_query()
+                except Exception as e:
+                    metadata['statsql_error'] = str(e)
+    else:
+        if optimizer is None:
+            raise Exception(f'No Umbra/UmbraDev optimizer configured for dataset "{dataset_name}"')
+        if not hasattr(optimizer, 'statsql_query'):
+            raise Exception(f'Optimizer "{optimizer_title}" does not support umbra.statsql')
+
+        metadata['dialect'] = getattr(optimizer, 'dialects', {}).get(target_name, 'umbra')
+        metadata['collection_method'] = 'statsql'
+        metadata['statsql_call'] = optimizer.statsql_call(target_name) if hasattr(optimizer, 'statsql_call') else f"select umbra.statsql('{metadata['dialect']}');"
+        with optimizer_lock:
+            metadata['statsql_query'] = optimizer.statsql_query(target_name)
+
+    fingerprint, fingerprint_payload = _stats_fingerprint(
+        dataset_name,
+        target_title,
+        metadata,
+        target_config,
+        optimizer_config,
+    )
+    metadata['fingerprint'] = fingerprint
+    metadata['fingerprint_payload'] = fingerprint_payload
+
+    cached = _read_cached_statistics(cache_dir, fingerprint)
+    if cached is not None:
+        planner_statistics_cache[(dataset_name, target_title)] = cached
+        return cached
+
+    if _is_umbra_dbms(target):
+        with target_lock:
+            try:
+                statistics = target.statjson() if hasattr(target, 'statjson') else str(target.execute_scalar(metadata['statjson_call']))
+            except Exception as e:
+                metadata['statjson_error'] = str(e)
+                if not metadata.get('statsql_query'):
+                    raise
+                metadata['collection_method'] = 'statsql_fallback'
+                statistics = str(target.execute_scalar(metadata['statsql_query']))
+    else:
+        stats_timeout = target_config.get('params', {}).get('umbra_planner_statistics_timeout', 0) or 0
+        with target_lock:
+            statistics = str(target.execute_scalar(metadata['statsql_query'], timeout=stats_timeout))
+
+    record = _write_cached_statistics(cache_dir, metadata, statistics)
+    planner_statistics_cache[(dataset_name, target_title)] = record
+    return record
+
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_frontend(path: str):
@@ -148,10 +378,22 @@ def health():
     with dbms_lock:
         benchmarks = []
         for dataset_name, bench in benchmark_instances.items():
+            systems = []
+            for (d, title), dbms in active_dbms.items():
+                if d != dataset_name:
+                    continue
+                stats_record = planner_statistics_cache.get((dataset_name, title), {})
+                systems.append({
+                    'title': title,
+                    'name': dbms.name,
+                    'planner_only': (dataset_name, title) in planner_only_systems,
+                    'statistics_status': stats_record.get('status', 'unavailable'),
+                    'statistics_available': stats_record.get('status') == 'success',
+                })
             benchmarks.append({
                 'name': bench.name,
                 'fullname': bench.fullname,
-                'systems': [{'title': title, 'name': dbms.name} for (d, title), dbms in active_dbms.items() if d == dataset_name],
+                'systems': systems,
                 'optimizer': optimizer_dbms_name.get(dataset_name),
             })
 
@@ -163,6 +405,7 @@ def health():
                 'dataset': 'POST /dataset',
                 'query': 'POST /query',
                 'plan': 'POST /plan',
+                'planner_statistics': 'POST /planner/statistics',
                 'optimize': 'POST /optimize'
             }
         })
@@ -320,6 +563,34 @@ def get_query_plan():
         query_lock.release()
 
 
+@app.route('/planner/statistics', methods=['POST'])
+def planner_statistics():
+    """
+    Return cached Umbra planner statistics for a target DBMS.
+
+    Request JSON:
+    {
+        "dataset": "tpch",       # Optional if only one dataset is loaded
+        "target_dbms": "DuckDB"  # Required: active system title from /health
+    }
+    """
+    data = request.get_json() or {}
+    target_dbms = data.get('target_dbms') or data.get('dbms')
+    if not target_dbms:
+        return error('Missing required field: target_dbms', 400)
+
+    dataset_name, err = resolve_dataset(data.get('dataset'))
+    if err:
+        return err
+
+    try:
+        record = get_or_collect_planner_statistics(dataset_name, target_dbms)
+        return jsonify(record)
+    except Exception as e:
+        log.error(f"Error retrieving planner statistics for {dataset_name}/{target_dbms}: {e}")
+        return error(str(e), 500)
+
+
 @app.route('/optimize', methods=['POST'])
 def optimize():
     """
@@ -451,7 +722,15 @@ def get_dataset():
         return error(str(e), 500)
 
 
-def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir: str, base_port: int = 54320, optimizer_name: Optional[str] = None):
+def setup_dbms(
+    benchmark: Benchmark,
+    systems: list[dict],
+    db_dir: str,
+    data_dir: str,
+    base_port: int = 54320,
+    optimizer_name: Optional[str] = None,
+    optimizer_schema_only: bool = False,
+):
     """
     Initialize and load all specified DBMS instances for a single benchmark/dataset.
 
@@ -462,6 +741,7 @@ def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir:
         data_dir: Data directory
         base_port: Starting port for DBMS allocation
         optimizer_name: Name of Umbra/UmbraDev instance for optimization (optional)
+        optimizer_schema_only: Load the configured optimizer with schema only
     """
     dataset_name = benchmark.name
     dbms_descriptions = database_systems()
@@ -471,12 +751,18 @@ def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir:
 
     port_offset = len(active_dbms)
 
+    if optimizer_schema_only and not optimizer_name:
+        log.warn("optimizer_schema_only is ignored unless an explicit optimizer is configured")
+
     with dbms_lock:
         for system_config in systems:
             title = system_config['title']
             dbms_name = system_config['dbms']
             params = dict(system_config.get('params', {}))
             settings = system_config.get('settings', {})
+            planner_only = bool(optimizer_schema_only and optimizer_name and title == optimizer_name)
+            if planner_only:
+                params['umbra_schema_only'] = True
 
             host_port = base_port + port_offset
             port_offset += 1
@@ -493,18 +779,25 @@ def setup_dbms(benchmark: Benchmark, systems: list[dict], db_dir: str, data_dir:
                 dbms = dbms_descriptions[dbms_name].instantiate(benchmark, db_dir, data_dir, params, settings)
                 dbms.__enter__()
 
-                log.driver(f"Loading database for {title}...")
-                dbms.load_database()
+                log.driver(f"Loading {'schema' if planner_only else 'database'} for {title}...")
+                if planner_only:
+                    dbms.load_schema()
+                else:
+                    dbms.load_database()
 
-                active_dbms[(dataset_name, title)] = dbms
-                dbms_locks[(dataset_name, title)] = threading.Lock()
-                dbms_restart_configs[(dataset_name, title)] = {
+                key = (dataset_name, title)
+                active_dbms[key] = dbms
+                dbms_locks[key] = threading.Lock()
+                dbms_restart_configs[key] = {
                     'dbms_name': dbms_name,
                     'params': params,
                     'settings': settings,
                     'db_dir': db_dir,
                     'data_dir': data_dir,
+                    'planner_only': planner_only,
                 }
+                if planner_only:
+                    planner_only_systems.add(key)
                 log.driver(f"✓ {title} is ready (port: {host_port})")
 
                 conn_str = dbms.connection_string()
@@ -573,6 +866,7 @@ Endpoints:
   POST /dataset         - Schema and queries (add "dataset" field for multiple datasets)
   POST /query           - Execute query on specified DBMS (add "dataset" field for multiple datasets)
   POST /plan            - Get query plan for a query
+  POST /planner/statistics - Get cached Umbra planner statistics for a target DBMS
   POST /optimize        - Optimize query using Umbra (if configured)
 """
     )
@@ -665,6 +959,7 @@ def main():
     # Shared systems list — same for all datasets
     systems_config = config.get('systems', [])
     optimizer_name = config.get('optimizer', None)
+    optimizer_schema_only = bool(config.get('optimizer_schema_only', False))
 
     systems = _parse_systems(systems_config)
     if not systems:
@@ -701,7 +996,15 @@ def main():
         benchmark_instances[bench.name] = bench
 
         try:
-            setup_dbms(bench, systems, args.db_dir, args.data_dir, args.base_port, optimizer_name)
+            setup_dbms(
+                bench,
+                systems,
+                args.db_dir,
+                args.data_dir,
+                args.base_port,
+                optimizer_name,
+                optimizer_schema_only,
+            )
         except Exception as e:
             log.error(f"Failed to set up DBMS instances for dataset '{bench.name}': {e}")
             cleanup_dbms()
@@ -724,6 +1027,7 @@ def _start_server(args):
     log.driver("  POST /dataset  - Schema and queries")
     log.driver("  POST /query    - Execute query")
     log.driver("  POST /plan     - Get query plan")
+    log.driver("  POST /planner/statistics - Get planner statistics")
     log.driver("  POST /optimize - Optimize query using Umbra")
     log.driver("")
 

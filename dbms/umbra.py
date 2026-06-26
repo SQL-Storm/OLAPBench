@@ -176,9 +176,20 @@ class Umbra(Postgres):
     def _without_trailing_semicolon(query: str) -> str:
         return query.strip().rstrip(";").rstrip()
 
-    def statsql_query(self, database: str) -> str:
+    def statsql_call(self, database: str = None) -> str:
+        if database is None:
+            return "select umbra.statsql();"
         dialect = self.dialects.get(database, "umbra")
-        return str(self.execute_scalar(f"select umbra.statsql({self._sql_string(dialect)});"))
+        return f"select umbra.statsql({self._sql_string(dialect)});"
+
+    def statsql_query(self, database: str = None) -> str:
+        return str(self.execute_scalar(self.statsql_call(database)))
+
+    def statjson_call(self) -> str:
+        return "select umbra.statjson();"
+
+    def statjson(self) -> str:
+        return str(self.execute_scalar(self.statjson_call()))
 
     def _add_statistics_option(self, query: str, statistics: str) -> str:
         query = self._without_trailing_semicolon(query)

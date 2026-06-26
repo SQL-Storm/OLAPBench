@@ -56,6 +56,51 @@ def _enabled(value) -> bool:
     return bool(value)
 
 
+def _statistics_name(name) -> str:
+    name = str(name)
+    if (name.startswith('"') and name.endswith('"')) or (name.startswith('`') and name.endswith('`')):
+        return name[1:-1]
+    return name
+
+
+def _expected_statistics_tables(benchmark: Benchmark) -> set[str]:
+    schema = benchmark.get_schema(primary_key=False, foreign_keys=False)
+    return {
+        _statistics_name(table["name"])
+        for table in schema["tables"]
+        if table.get("_eval", True) and not table.get("initially empty", False)
+    }
+
+
+def _collected_statistics_tables(statistics: str) -> set[str]:
+    try:
+        payload = json.loads(statistics)
+    except Exception as e:
+        log.warn(f"Could not parse Umbra statistics string as JSON: {e}")
+        return set()
+
+    tables = payload.get("tables", [])
+    if not isinstance(tables, list):
+        log.warn("Umbra statistics string does not contain a table list")
+        return set()
+
+    return {
+        _statistics_name(table["table"])
+        for table in tables
+        if isinstance(table, dict) and "table" in table
+    }
+
+
+def _warn_missing_statistics_tables(benchmark: Benchmark, statistics: str):
+    expected_tables = _expected_statistics_tables(benchmark)
+    collected_tables = _collected_statistics_tables(statistics)
+    missing_tables = sorted(expected_tables - collected_tables)
+    if missing_tables:
+        preview = ", ".join(missing_tables[:10])
+        suffix = "" if len(missing_tables) <= 10 else f", ... ({len(missing_tables)} total)"
+        log.warn(f"Umbra statistics are missing benchmark tables: {preview}{suffix}")
+
+
 def _plan_queries_with_umbra(benchmark: Benchmark, system: System, query_names: list[str], dbms_descriptions: dict,
                              db_dir: str, data_dir: str, target_dbms=None) -> list[tuple[str, str]]:
     use_target_statistics = _enabled(system.params.get("umbra_planner_statistics", False))
@@ -80,6 +125,7 @@ def _plan_queries_with_umbra(benchmark: Benchmark, system: System, query_names: 
             log.driver(f"Collecting {system.dbms} statistics for Umbra planner")
             stats_timeout = system.params.get("umbra_planner_statistics_timeout", 0) or 0
             statistics = str(target_dbms.execute_scalar(stats_query, timeout=stats_timeout))
+            _warn_missing_statistics_tables(benchmark, statistics)
         else:
             umbra.load_database()
 

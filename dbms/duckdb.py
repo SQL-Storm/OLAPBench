@@ -108,6 +108,9 @@ class DuckDB(DBMS):
         if self._memory is not None and "memory_limit" not in self._settings:
             self._execute(f"PRAGMA memory_limit=\'{int(self._memory) // (1024 * 1024)}MiB\';", fetch_result=False)
 
+        if self._cpus is not None and "threads" not in self._settings:
+            self._execute(f"PRAGMA threads={self._cpus}';", fetch_result=False)
+
         for (setting, value) in self._settings.items():
             self._execute(f"PRAGMA {setting}=\'{value}\';", fetch_result=False)
 

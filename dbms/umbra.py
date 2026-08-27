@@ -93,8 +93,7 @@ class Umbra(Postgres):
             "OPTIMIZER_JSON_TYPES": "1",
             "OPTIMIZER_JSON_IUS": "1",
             "INDEX_METHOD": str(self._indexMethod).upper(),
-            # Umbra detects the available cores itself (from the container's cpuset), so only the
-            # memory budget needs to be passed.
+            "PARALLEL": str(self._cpus),
             "MEMORY": "%dB" % self._memory,
         }
 

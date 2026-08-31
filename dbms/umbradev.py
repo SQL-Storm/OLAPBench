@@ -222,8 +222,10 @@ class UmbraDev(Umbra):
                     result.rows = 1
                     return result
 
-                # Parse CSV with space delimiter, quote character ", and NULL representation
-                reader = csv.reader(file, delimiter=' ', quotechar='"', escapechar='\\')
+                # Umbra emits standard double-quoted CSV. Backslashes must remain literal:
+                # generated statsql queries contain SQL string escapes such as '\\', and
+                # treating backslash as a CSV escape character truncates those large fields.
+                reader = csv.reader(file, delimiter=' ', quotechar='"')
                 rows = []
                 for row in reader:
                     # Convert NULL strings to None

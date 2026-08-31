@@ -26,6 +26,10 @@ class Process:
         self.selector.register(self.process.stdout, selectors.EVENT_READ)
         self.selector.register(self.process.stderr, selectors.EVENT_READ)
 
+    def is_running(self) -> bool:
+        """Return whether the child process has been started and is still alive."""
+        return hasattr(self, "process") and self.process.poll() is None
+
     def stop(self):
         self.process.stdin.close()
         return_code = self.process.wait()

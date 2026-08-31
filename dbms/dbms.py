@@ -303,6 +303,10 @@ class DBMS(ABC):
         except Exception:
             return "removed"
 
+    def _liveness_status(self) -> str:
+        """Return a backend-independent status for the server's health supervisor."""
+        return self._container_status()
+
     def _execute_in_container(self, command: str, timeout: int = 0):
         timer = None
         if timeout > 0:

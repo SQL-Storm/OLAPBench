@@ -119,6 +119,12 @@ class UmbraDev(Umbra):
             self.process.stop()
         self.result_dir.cleanup()
 
+    def _liveness_status(self) -> str:
+        """Report the local Umbra subprocess instead of the unused Docker container."""
+        if self.process is None:
+            return "not started"
+        return "running" if self.process.is_running() else "exited"
+
     def _copy_statements(self, schema: dict) -> list[str]:
         return sql.copy_statements_postgres(schema, self._data_dir_client)
 

@@ -48,7 +48,7 @@ dbms_restarting: set[tuple[str, str]] = set()  # keys with a restart currently i
 planner_only_systems: set[tuple[str, str]] = set()  # (dataset_name, title)
 planner_statistics_cache: Dict[tuple[str, str], dict] = {}  # (dataset_name, target title) -> stats record
 
-# Background liveness supervisor: how often (seconds) to poll each DBMS container and restart
+# Background liveness supervisor: how often (seconds) to poll each DBMS instance and restart
 # any that have crashed. Set to 0 to disable.
 HEALTH_CHECK_INTERVAL = 10
 
@@ -131,7 +131,7 @@ def restart_dbms(dataset_name: str, title: str) -> Optional[str]:
 
 def restart_if_crashed(dataset_name: str, title: str, dbms: DBMS) -> bool:
     """
-    Restart a DBMS only if its container has actually crashed (is no longer running).
+    Restart a DBMS only if its backing process/container has actually crashed.
 
     This is called from the query/plan/optimize handlers when an exception bubbles up, so
     that genuine crashes trigger a restart while ordinary query errors (bad SQL, etc.) do
@@ -139,14 +139,14 @@ def restart_if_crashed(dataset_name: str, title: str, dbms: DBMS) -> bool:
     request can return immediately. Returns True if a restart was triggered.
     """
     try:
-        status = dbms._container_status()
+        status = dbms._liveness_status()
     except Exception:
         status = "removed"
 
     if status == "running":
         return False
 
-    log.error(f"{dataset_name}/{title} appears to have crashed (container status: {status}); restarting")
+    log.error(f"{dataset_name}/{title} appears to have crashed (status: {status}); restarting")
     threading.Thread(target=restart_dbms, args=(dataset_name, title), daemon=True).start()
     return True
 
@@ -154,7 +154,8 @@ def restart_if_crashed(dataset_name: str, title: str, dbms: DBMS) -> bool:
 def monitor_dbms(interval: int):
     """
     Background supervisor that periodically checks every active DBMS and restarts any whose
-    container has crashed while idle (i.e. not caught by an in-flight query). Runs forever.
+    backing process/container has crashed while idle (i.e. not caught by an in-flight query).
+    Runs forever.
     """
     while True:
         time.sleep(interval)
@@ -170,19 +171,19 @@ def monitor_dbms(interval: int):
                     continue
 
             query_lock = dbms_locks.get(key)
-            # If a query is in flight the lock is held — the container is in use and the query
+            # If a query is in flight the lock is held — the DBMS is in use and the query
             # handler will deal with any crash, so skip this round.
             if query_lock is None or not query_lock.acquire(blocking=False):
                 continue
             try:
-                status = dbms._container_status()
+                status = dbms._liveness_status()
             except Exception:
                 status = "removed"
             finally:
                 query_lock.release()
 
             if status != "running":
-                log.error(f"{dataset_name}/{title} container is not running (status: {status}); restarting")
+                log.error(f"{dataset_name}/{title} is not running (status: {status}); restarting")
                 threading.Thread(target=restart_dbms, args=(dataset_name, title), daemon=True).start()
 
 

@@ -1,4 +1,7 @@
-optimizer: Umbra
+# Use a schema-only Umbra instance for optimization. Statistics are collected
+# from each selected target DBMS and supplied to this optimizer by the frontend.
+optimizer: Umbra (empty optimizer)
+optimizer_schema_only: true
 
 datasets:
   - name: tpch
@@ -10,11 +13,22 @@ datasets:
   - name: job
 
 systems:
+  - title: Umbra (empty optimizer)
+    dbms: umbra
+    disabled: false
+    parameter:
+      version: "26.08-querybrew"
+      cpus: 16
+      memory: "32G"
+    settings:
+      optimizer.sidewayinformationpassing: false
+      multiway: d
+
   - title: Umbra
     dbms: umbra
     disabled: false
     parameter:
-      version: "26.01"
+      version: "26.08-querybrew"
       cpus: 16
       memory: "32G"
     settings:

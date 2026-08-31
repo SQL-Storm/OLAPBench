@@ -149,7 +149,9 @@ class UmbraDev(Umbra):
             output = self.process.readline_stderr()
             client_total = (time.time() - begin) * 1000
 
-            if "execution:" in output and "compilation:" in output:
+            if (
+                "execution:" in output and "compilation:" in output
+            ) or re.search(r"\bexec:\s*[0-9.]+\s*s,\s*comp:\s*[0-9.]+\s*s", output):
                 break
             elif output.startswith("ERROR:"):
                 log.error_verbose(output)
@@ -177,7 +179,13 @@ class UmbraDev(Umbra):
             execution = float(execution) * 1000
             compilation = float(compilation) * 1000
         except Exception:
-            pass
+            timing = re.search(
+                r"\bexec:\s*([0-9.]+)\s*s,\s*comp:\s*([0-9.]+)\s*s",
+                output,
+            )
+            if timing:
+                execution = float(timing.group(1)) * 1000
+                compilation = float(timing.group(2)) * 1000
 
         try:
             with open(record_file, "r") as file:
